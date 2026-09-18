@@ -1,0 +1,6 @@
+{
+    "name": "sonar_to_jira_agent Tools",
+    "version": "1.0.0",
+    "description": "Tool activities for sonar_to_jira_agent.",
+    "config": {}
+}

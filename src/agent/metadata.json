@@ -1,0 +1,23 @@
+{
+    "name": "sonar_to_jira_agent",
+    "version": "1.0.0",
+    "description": "Pulls a Sonar findings report from S3/MinIO and creates Jira tickets.",
+    "config": {
+        "triggers": [
+            {
+              "name": "bucket",
+              "type": "str",
+              "required": true,
+              "description": "S3/MinIO bucket containing the findings report",
+              "friendly_name": "Bucket"
+            },
+            {
+              "name": "key",
+              "type": "str",
+              "required": true,
+              "description": "S3/MinIO object key of the findings report (JSON)",
+              "friendly_name": "Report Key"
+            }
+        ]
+    }
+}
