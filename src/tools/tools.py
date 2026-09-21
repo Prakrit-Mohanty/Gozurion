@@ -87,3 +87,53 @@ async def create_jira_tickets(findings: list[dict]) -> dict:
         return {"created": created, "skipped": skipped}
 
     return await asyncio.to_thread(_create)
+
+
+@tool()
+async def reconcile_resolved_findings(findings: list[dict]) -> list[str]:
+    """
+    Auto-close tickets for findings no longer in a default-branch report.
+    A default-branch report is a full snapshot of currently-open findings
+    (see docs/REPORT_CONTRACT.md) - an open claim whose identity is
+    missing from it has been fixed. Only trusted for the default branch,
+    same reasoning as _should_reopen(): any other branch isn't
+    authoritative about what's actually fixed.
+    """
+
+    def _reconcile() -> list[str]:
+        if not findings:
+            return []
+
+        parsed = [Finding.model_validate(raw) for raw in findings]
+        sample = parsed[0]
+        if sample.default_branch is None or sample.branch != sample.default_branch:
+            return []
+
+        ticket_client = get_ticket_client()
+        destination = ticket_client.destination_id()
+        current_identities = {finding_identity(f) for f in parsed}
+        commit_sha = sample.commit_sha
+
+        transition_to_done = getattr(ticket_client, "transition_to_done", None)
+        add_comment = getattr(ticket_client, "add_comment", None)
+        closed: list[str] = []
+
+        with claims.get_connection() as conn:
+            for row in claims.list_open(conn, destination):
+                if row["finding_identity"] in current_identities:
+                    continue
+
+                ticket_key = row["ticket_key"]
+                try:
+                    if transition_to_done is not None and not transition_to_done(ticket_key):
+                        continue
+                    if add_comment is not None:
+                        add_comment(ticket_key, "Closed automatically - no longer reported on the default branch")
+                    claims.mark_closed(conn, destination, row["finding_identity"], commit_sha)
+                    closed.append(ticket_key)
+                except Exception:
+                    continue  # best-effort - one bad ticket shouldn't sink the batch
+
+        return closed
+
+    return await asyncio.to_thread(_reconcile)

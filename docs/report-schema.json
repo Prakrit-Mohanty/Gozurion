@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SonarToJira findings report",
+  "description": "A report object is a JSON array of these Finding objects, uploaded to S3/MinIO.",
+  "type": "array",
+  "items": {
+    "$defs": {
+      "Severity": {
+        "enum": [
+          "CRITICAL",
+          "HIGH",
+          "MEDIUM",
+          "LOW",
+          "INFO"
+        ],
+        "title": "Severity",
+        "type": "string"
+      }
+    },
+    "description": "A single issue reported by a scanner, in tool-agnostic form.",
+    "properties": {
+      "key": {
+        "title": "Key",
+        "type": "string"
+      },
+      "title": {
+        "title": "Title",
+        "type": "string"
+      },
+      "severity": {
+        "$ref": "#/$defs/Severity"
+      },
+      "component": {
+        "title": "Component",
+        "type": "string"
+      },
+      "line": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Line"
+      },
+      "message": {
+        "title": "Message",
+        "type": "string"
+      },
+      "finding_type": {
+        "title": "Finding Type",
+        "type": "string"
+      },
+      "deep_link": {
+        "title": "Deep Link",
+        "type": "string"
+      },
+      "source_tool": {
+        "title": "Source Tool",
+        "type": "string"
+      },
+      "branch": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Branch"
+      },
+      "commit_sha": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Commit Sha"
+      },
+      "repo_full_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Repo Full Name"
+      },
+      "default_branch": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Default Branch"
+      },
+      "how_to_fix": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "How To Fix"
+      },
+      "rule_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Rule Key"
+      },
+      "llm_explanation": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Llm Explanation"
+      },
+      "code_snippet": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Code Snippet"
+      },
+      "code_snippet_start_line": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Code Snippet Start Line"
+      }
+    },
+    "required": [
+      "key",
+      "title",
+      "severity",
+      "component",
+      "line",
+      "message",
+      "finding_type",
+      "deep_link",
+      "source_tool"
+    ],
+    "title": "Finding",
+    "type": "object"
+  }
+}

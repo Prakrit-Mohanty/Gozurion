@@ -12,6 +12,7 @@ async def sonar_to_jira(payload: Dict[str, Any]) -> dict:
     """Agent that:
     - Pulls a Sonar findings report (JSON) from S3/MinIO
     - Creates Jira tickets for any findings that don't already have one
+    - Auto-closes tickets for findings no longer present (default-branch reports only)
     """
 
     bucket = payload["bucket"]
@@ -19,10 +20,12 @@ async def sonar_to_jira(payload: Dict[str, Any]) -> dict:
 
     findings = await toolExecutor.execute("fetch_report_from_s3", bucket, key)
     result = await toolExecutor.execute("create_jira_tickets", findings)
+    closed = await toolExecutor.execute("reconcile_resolved_findings", findings)
 
     return {
         "bucket": bucket,
         "key": key,
         "finding_count": len(findings),
+        "closed": closed,
         **result,
     }
