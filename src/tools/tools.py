@@ -4,24 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 
-import boto3
 from aetherion_sdk import tool
 from core.models import Finding
+from core.s3 import get_s3_client
 from ticket import claims
 from ticket.base import finding_identity
 from ticket.factory import get_ticket_client
 from ticket.github_compare import is_ancestor
-
-
-def _s3_client():
-    return boto3.client(
-        "s3",
-        endpoint_url=os.environ.get("S3_ENDPOINT_URL") or None,
-        aws_access_key_id=os.environ.get("S3_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.environ.get("S3_SECRET_ACCESS_KEY"),
-    )
 
 
 @tool()
@@ -29,7 +19,7 @@ async def fetch_report_from_s3(bucket: str, key: str) -> list[dict]:
     """Download a Sonar findings report (JSON list of Finding dicts) from S3/MinIO."""
 
     def _fetch() -> list[dict]:
-        response = _s3_client().get_object(Bucket=bucket, Key=key)
+        response = get_s3_client().get_object(Bucket=bucket, Key=key)
         return json.loads(response["Body"].read())
 
     return await asyncio.to_thread(_fetch)
