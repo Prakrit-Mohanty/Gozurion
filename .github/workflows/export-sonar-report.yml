@@ -1,0 +1,127 @@
+name: Export SonarQube report to S3
+
+# Reusable, org-wide workflow: scans the calling repo with a self-hosted
+# SonarQube instance, waits for analysis to finish indexing, then runs
+# scanner/export.py (gozurion-export-report) to upload the findings as a
+# JSON report to S3/MinIO. Stops there - it does NOT trigger the
+# Aetherion agent itself. Once the agent is published on the Aetherion
+# platform, ticket creation is triggered from there, not from this
+# workflow.
+#
+# Called from another repo like:
+#
+#   jobs:
+#     export-sonar-report:
+#       uses: Prakrit-Mohanty/Gozurion/.github/workflows/export-sonar-report.yml@main
+#       secrets:
+#         SONAR_URL: ${{ secrets.SONAR_URL }}
+#         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+#         S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+#         S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+#         S3_BUCKET: ${{ secrets.S3_BUCKET }}
+
+on:
+  workflow_call:
+    inputs:
+      sonar_project_key:
+        description: "SonarQube project key - defaults to the calling repo's name"
+        required: false
+        type: string
+      gozurion_ref:
+        description: "Branch/tag of Gozurion to install the exporter from"
+        required: false
+        type: string
+        default: main
+    secrets:
+      SONAR_URL:
+        required: true
+      SONAR_TOKEN:
+        required: true
+      S3_ENDPOINT_URL:
+        required: false  # blank = real AWS S3; set for MinIO
+      S3_ACCESS_KEY_ID:
+        required: true
+      S3_SECRET_ACCESS_KEY:
+        required: true
+      S3_BUCKET:
+        required: true
+      GOZURION_CHECKOUT_TOKEN:
+        required: false  # only needed if Gozurion is private and cross-org
+    outputs:
+      bucket:
+        value: ${{ jobs.export.outputs.bucket }}
+      key:
+        value: ${{ jobs.export.outputs.key }}
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    outputs:
+      bucket: ${{ steps.export.outputs.bucket }}
+      key: ${{ steps.export.outputs.key }}
+    steps:
+      - name: Checkout scanned repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # SonarQube branch analysis wants full history
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: SonarQube scan
+        uses: sonarsource/sonarqube-scan-action@v4
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONAR_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            ${{ inputs.sonar_project_key && format('-Dsonar.projectKey={0}', inputs.sonar_project_key) || '' }}
+
+      - name: Wait for analysis to finish indexing
+        # SonarQube's search index can lag a few seconds behind the scan
+        # step completing - this polls the background task rather than a
+        # blind sleep. continue-on-error since we only want it to BLOCK
+        # until indexing is done, never fail the pipeline on a failed
+        # quality gate - export must still run regardless.
+        uses: sonarsource/sonarqube-quality-gate-action@v1
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Checkout Gozurion (exporter source)
+        uses: actions/checkout@v4
+        with:
+          repository: Prakrit-Mohanty/Gozurion
+          ref: ${{ inputs.gozurion_ref }}
+          token: ${{ secrets.GOZURION_CHECKOUT_TOKEN || github.token }}
+          path: _gozurion
+
+      - name: Install exporter
+        # Base install only - no aetherion-sdk/temporalio/psycopg (the
+        # [agent] extra), which scanner/export.py never imports and which
+        # would fail to resolve on this runner anyway (aetherion-sdk's
+        # wheel is pinned to macOS arm64).
+        run: pip install ./_gozurion
+
+      - name: Export report to S3
+        id: export
+        env:
+          SONAR_URL: ${{ secrets.SONAR_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_PROJECT_KEY: ${{ inputs.sonar_project_key || github.event.repository.name }}
+          STORAGE_BACKEND: s3
+          S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
+          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          GITHUB_TOKEN: ${{ secrets.GOZURION_CHECKOUT_TOKEN || github.token }}
+        run: gozurion-export-report

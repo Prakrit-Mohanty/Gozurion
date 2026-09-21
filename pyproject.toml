@@ -7,10 +7,25 @@ readme = "README.md"
 requires-python = ">=3.12.10,<3.14"
 
 
+# Kept minimal on purpose: scanner/export.py's full import chain (core/,
+# scanner/, storage/) only ever needs these three - no aetherion-sdk, no
+# temporalio, no psycopg. aetherion-sdk's own wheel is pinned to macOS
+# arm64 (see the `agent` extra below), which would make `pip install .`
+# fail outright on a standard Linux CI runner if it were a hard
+# dependency - exactly where gozurion-export-report needs to run.
 dependencies = [
-    "aetherion-sdk @ https://sdk.sbox.aetherion.io/Darwin/aetherion_sdk-0.0.92-cp312-cp312-macosx_26_0_arm64.whl",
     "boto3",
     "requests",
+    "pydantic",
+]
+
+# Only the Temporal agent/tools (src/agent, src/tools, ticket/) need
+# these - install with `pip install .[agent]`. Kept separate so a CI
+# runner exporting reports never has to resolve aetherion-sdk's
+# macOS-only wheel.
+[project.optional-dependencies]
+agent = [
+    "aetherion-sdk @ https://sdk.sbox.aetherion.io/Darwin/aetherion_sdk-0.0.92-cp312-cp312-macosx_26_0_arm64.whl",
     "temporalio",
     "psycopg[binary]",
 ]
