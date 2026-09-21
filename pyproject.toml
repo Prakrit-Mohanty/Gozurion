@@ -12,6 +12,7 @@ dependencies = [
     "boto3",
     "requests",
     "temporalio",
+    "psycopg[binary]",
 ]
 
 [dependency-groups]

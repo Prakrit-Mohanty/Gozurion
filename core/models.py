@@ -32,6 +32,7 @@ class Finding(BaseModel):
     branch: str | None = None
     commit_sha: str | None = None  # commit this finding was scanned at
     repo_full_name: str | None = None  # "{owner}/{repo}" on GitHub
+    default_branch: str | None = None  # this repo's trunk, e.g. "main" - not necessarily `branch`
     how_to_fix: str | None = None  # rule-level guidance, not fix-specific
     rule_key: str | None = None  # e.g. "python:S2068"
     llm_explanation: str | None = None  # LLM-generated explanation/fix
