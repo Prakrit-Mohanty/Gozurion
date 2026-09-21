@@ -21,18 +21,18 @@ import json
 import logging
 import os
 import sys
-from dataclasses import dataclass
 
-from core.s3 import get_s3_client
+from pydantic import BaseModel
+
 from scanner import git_context
 from scanner.sonarqube import SonarQubeClient
+from storage.factory import get_storage_client
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class GitMetadata:
+class GitMetadata(BaseModel):
     branch: str | None
     commit_sha: str | None
     repo_full_name: str | None
@@ -77,12 +77,7 @@ def upload_report(report: list[dict], meta: GitMetadata) -> tuple[str, str]:
     bucket = os.environ.get("S3_BUCKET", "sonar-reports")
     key = f"{meta.repo_full_name or 'unknown-repo'}/{meta.branch or 'unknown-branch'}/{meta.commit_sha or 'unknown-commit'}.json"
 
-    get_s3_client().put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=json.dumps(report).encode("utf-8"),
-        ContentType="application/json",
-    )
+    get_storage_client().upload(bucket, key, json.dumps(report).encode("utf-8"))
     return bucket, key
 
 

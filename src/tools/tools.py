@@ -7,7 +7,7 @@ import json
 
 from aetherion_sdk import tool
 from core.models import Finding
-from core.s3 import get_s3_client
+from storage.factory import get_storage_client
 from ticket import claims
 from ticket.base import finding_identity
 from ticket.factory import get_ticket_client
@@ -16,11 +16,10 @@ from ticket.github_compare import is_ancestor
 
 @tool()
 async def fetch_report_from_s3(bucket: str, key: str) -> list[dict]:
-    """Download a Sonar findings report (JSON list of Finding dicts) from S3/MinIO."""
+    """Download a Sonar findings report (JSON list of Finding dicts) - S3, MinIO, or whatever STORAGE_BACKEND resolves to."""
 
     def _fetch() -> list[dict]:
-        response = get_s3_client().get_object(Bucket=bucket, Key=key)
-        return json.loads(response["Body"].read())
+        return json.loads(get_storage_client().download(bucket, key))
 
     return await asyncio.to_thread(_fetch)
 

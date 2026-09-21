@@ -36,7 +36,7 @@ allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 # core/ and ticket/ are vendored from SonarToJira (gozu) - see core/__init__.py.
-packages = ["src", "core", "ticket", "scanner"]
+packages = ["src", "core", "ticket", "scanner", "storage"]
 
 [tool.black]
 line-length = 100
