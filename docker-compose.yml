@@ -28,12 +28,6 @@ services:
     depends_on:
       minio:
         condition: service_healthy
-    # `mc config host add` is unrecognized by this mc release - it failed
-    # silently (no `set -e`) and `mc mb myminio/...` then fell back to
-    # creating plain local directories in this throwaway container instead
-    # of real buckets. `mc alias set` is the current, correct way to
-    # register a server; `set -e` makes any future breakage loud instead
-    # of silently no-op'ing again.
     entrypoint: >
       /bin/sh -c "
       set -e;
@@ -42,6 +36,26 @@ services:
       mc mb --ignore-existing myminio/activities;
       mc mb --ignore-existing myminio/sonar-reports;
       "
+    networks:
+      - temporal-network
+
+  postgres:
+    container_name: gozurion-postgres
+    restart: unless-stopped
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gozurion}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gozurion}
+      POSTGRES_DB: ${POSTGRES_DB:-gozurion}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gozurion} -d ${POSTGRES_DB:-gozurion}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - temporal-network
 

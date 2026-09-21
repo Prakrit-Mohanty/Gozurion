@@ -2,15 +2,7 @@
 # Author: Wasiullah Rafeeq S
 # Editor: Prakrit Mohanty
 
-"""
-Normalized domain vocabulary shared by every scanner adapter (scanner/client.py)
-and every ticket adapter (ticket/client.py).
-
-Neither side should ever see a tool-specific value (SonarQube's BLOCKER/MAJOR
-severities, Jira's issue keys, etc) outside its own adapter - everything that
-crosses the boundary between "fetch findings" and "create tickets" is expressed
-in these types.
-"""
+"""Normalized domain vocabulary shared across scanner and ticket adapters."""
 
 from enum import Enum
 
@@ -18,12 +10,6 @@ from pydantic import BaseModel
 
 
 class Severity(Enum):
-    """
-    Normalized severity vocabulary. Every scanner adapter translates its own
-    tool-specific severity scale INTO this; every ticket adapter translates
-    this OUT INTO its own tool-specific priority scale.
-    """
-
     CRITICAL = "CRITICAL"
     HIGH = "HIGH"
     MEDIUM = "MEDIUM"
@@ -40,41 +26,16 @@ class Finding(BaseModel):
     component: str
     line: int | None
     message: str
-    finding_type: str  # generic, e.g. "vulnerability" or "hotspot" - not tool-specific naming
+    finding_type: str  # "vulnerability" or "hotspot"
     deep_link: str
     source_tool: str  # e.g. "sonarqube"
-    branch: str | None = None  # scan branch, stamped by fetch_findings_activity
-    # Rule-level "how to fix this" guidance (plain text, HTML stripped) -
-    # generic per rule (e.g. "use tempfile.NamedTemporaryFile instead"),
-    # never a fix tailored to this exact line/finding. None when the
-    # scanner has no such guidance for this rule, or none at all (e.g.
-    # a non-SonarQube scanner added later).
-    how_to_fix: str | None = None
-    # The scanner's own rule identifier (e.g. "python:S2068"), stamped by
-    # fetch_sonarqube_findings() - llm/enrich.py needs it to recognize
-    # hardcoded-credential rules and withhold the code snippet for those
-    # (see llm/enrich.py's _is_credential_rule()).
-    rule_key: str | None = None
-    # LLM-generated plain-English explanation + suggested fix, set by
-    # create_tickets_activity/github_action.main for a genuinely-new
-    # Blocker/Critical/High ticket only (see llm/enrich.py). None means
-    # "not generated" (no anthropic_api_key configured, non-eligible
-    # severity, or the call failed) - the ticket falls back to
-    # finding.message, exactly like before this field existed.
-    llm_explanation: str | None = None
-    # Source lines already fetched by the scanner adapter itself, for a
-    # scanner with no remote server to fetch them from later (local
-    # Semgrep - scanner/semgrep_local.py reads them off the host checkout
-    # at scan time, since the Temporal worker that would otherwise need to
-    # fetch them has no access to that filesystem). None means "not
-    # pre-fetched" - llm/enrich.py and scanner/screenshot.py both fall
-    # back to their existing SonarQube-API fetch in that case. Plain text,
-    # no HTML markup to strip (unlike SonarQube's own API response).
+    branch: str | None = None
+    commit_sha: str | None = None  # commit this finding was scanned at
+    repo_full_name: str | None = None  # "{owner}/{repo}" on GitHub
+    how_to_fix: str | None = None  # rule-level guidance, not fix-specific
+    rule_key: str | None = None  # e.g. "python:S2068"
+    llm_explanation: str | None = None  # LLM-generated explanation/fix
     code_snippet: str | None = None
-    # The absolute file line number of code_snippet's first line - needed
-    # to know where `line` falls WITHIN the snippet, same role as
-    # scanner/screenshot.py's fetch_snippet_lines() returning `from_line`
-    # for the SonarQube path. Meaningless when code_snippet is None.
     code_snippet_start_line: int | None = None
 
 
@@ -86,20 +47,6 @@ class CreatedTicket(BaseModel):
 class TicketResult(BaseModel):
     created: list[CreatedTicket] = []
     skipped: list[str] = []
-    # Findings that were new (no existing ticket) but didn't get one this
-    # run because create_tickets_activity's per-run backlog cap was
-    # already reached - distinct from `skipped`, which means "already
-    # ticketed", not "deferred". Rolled up into one shared ticket instead
-    # of one each - see JiraClient.upsert_rollup_ticket().
-    deferred: list[str] = []
-    # The shared rollup ticket's key, set by create_tickets_activity
-    # whenever `deferred` is non-empty and the ticket backend supports
-    # upsert_rollup_ticket() - None otherwise (no deferred findings, or
-    # the backend/attempt doesn't support it).
-    rollup_ticket: str | None = None
-    # Ticket keys reconcile_resolved_findings_activity auto-closed this
-    # same run (temporal/workflows/scan_to_ticket.py) - attached onto this
-    # same TicketResult rather than a separate model, since this is
-    # already the one "what happened this run" result returned all the
-    # way out to the CLI (cli/report.py's end-of-run summary).
-    closed: list[str] = []
+    deferred: list[str] = []  # new but backlog-capped this run
+    rollup_ticket: str | None = None  # shared ticket for `deferred`
+    closed: list[str] = []  # auto-closed this run

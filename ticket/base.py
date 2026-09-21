@@ -1,21 +1,13 @@
 # Copyright (c) 2026 Calfus Inc.
 # Author: Wasiullah Rafeeq S
 
-"""
-Generic ticketing interface every backend (Jira, and whatever's added
-later - Linear, GitHub Issues) implements. Adding a new destination means
-writing a new TicketClient subclass and registering it in
-ticket/factory.py - nothing in core/models.py, scanner/, or the Temporal
-workflow/activities/receiver needs to change.
-"""
+"""Generic ticketing interface every backend (Jira, later Linear/GitHub Issues) implements."""
 
+import hashlib
 from abc import ABC, abstractmethod
 
 from core.models import Finding, Severity
 
-# Normalized Severity -> Jira priority name. Backend-specific mappings like
-# this live next to the client that uses them (see jira_client.py) once
-# there's more than one backend; kept here for now since it's the only one.
 SEVERITY_TO_PRIORITY = {
     Severity.CRITICAL: "Highest",
     Severity.HIGH: "High",
@@ -27,45 +19,38 @@ DEFAULT_PRIORITY = "Medium"
 
 SUMMARY_MAX_LENGTH = 255
 
+_IDENTITY_HASH_LENGTH = 20
+
+
+def finding_identity(finding: Finding) -> str:
+    """
+    Branch-agnostic identity: same rule at the same file/line = same
+    issue, regardless of which branch/scan reported it. Excludes
+    finding.key/finding.branch on purpose - a scanner commonly stamps a
+    different key per branch for the same underlying issue.
+    """
+    parts = [finding.component, str(finding.line), finding.rule_key or "", finding.finding_type]
+    return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:_IDENTITY_HASH_LENGTH]
+
 
 class TicketClient(ABC):
     @abstractmethod
     def destination_id(self) -> str:
-        """
-        A stable string identifying where this client creates tickets (e.g.
-        "jira:{base_url}:{project_key}") - scopes ticket/claims.py's
-        idempotency ledger, so two genuinely different destinations tracking
-        the same finding key don't collide with each other.
-        """
+        """Stable id for where this client creates tickets, e.g. "jira:{base_url}:{project_key}"."""
         raise NotImplementedError
 
     @abstractmethod
-    def find_existing(self, finding_key: str) -> str | None:
-        """Return the key of an existing ticket for this finding, if any (dedupe)."""
+    def find_existing(self, finding: Finding) -> str | None:
+        """Existing ticket key for this finding's identity, if any - must key off finding_identity(), not finding.key."""
         raise NotImplementedError
 
     @abstractmethod
     def create_ticket(self, finding: Finding, custom_fields: dict[str, str] | None = None) -> str:
         """
-        Create a ticket for a finding, return the new ticket's key.
-
-        `custom_fields` is optional and backend-specific (Jira: whichever
-        of ticket/jira_client.py's CUSTOM_FIELD_COMPONENT_NAME/
-        CUSTOM_FIELD_LINE_NAME were found by discover_custom_fields() -
-        see create_tickets_activity, which calls that once per activity
-        run and passes the result through here for every ticket). Kept as
-        a plain optional parameter on this required method (default None,
-        a backend free to ignore it) rather than its own getattr-detected
-        bonus method, since it's part of ticket creation itself, not a
-        separate step - unlike attach_screenshot()/add_comment()/
-        transition_to_done()/upsert_rollup_ticket()/ticket_exists()/
-        discover_custom_fields(), which ARE deliberately NOT part of this
-        contract: optional, backend-specific bonus capabilities (see
-        jira_client.py). Callers use getattr(client, name, None) to
-        detect support for those rather than calling them directly (see
-        temporal/activities/capture_and_attach_screenshot.py,
-        temporal/activities/reconcile_resolved_findings.py, and
-        temporal/activities/create_tickets.py's backlog rollup,
-        stale-ticket-claim recovery, and custom-field discovery).
+        Create a ticket, return its key. `custom_fields` is optional and
+        backend-specific. Bonus capabilities (attach_screenshot,
+        add_comment, transition_to_done, upsert_rollup_ticket,
+        ticket_exists, discover_custom_fields) are NOT part of this
+        contract - callers use getattr(client, name, None) to detect them.
         """
         raise NotImplementedError

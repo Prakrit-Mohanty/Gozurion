@@ -43,7 +43,7 @@ async def create_jira_tickets(findings: list[dict]) -> dict:
 
         for raw in findings:
             finding = Finding.model_validate(raw)
-            existing = ticket_client.find_existing(finding.key)
+            existing = ticket_client.find_existing(finding)
             if existing:
                 skipped.append(finding.key)
                 continue
