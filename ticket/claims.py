@@ -12,24 +12,13 @@ branches reporting the same issue resolve to the same row here.
 Schema: ticket/schema.sql.
 """
 
-import os
 from typing import Any
 
 import psycopg
-from psycopg.rows import dict_row
+
+from core.db import get_connection
 
 _STALE_CLAIM_SECONDS = 300  # abandoned in-progress claim self-heal window
-
-
-def get_connection() -> psycopg.Connection[dict[str, Any]]:
-    return psycopg.Connection[dict[str, Any]].connect(
-        host=os.environ["POSTGRES_HOST"],
-        port=os.environ["POSTGRES_PORT"],
-        user=os.environ["POSTGRES_USER"],
-        password=os.environ["POSTGRES_PASSWORD"],
-        dbname=os.environ["POSTGRES_DB"],
-        row_factory=dict_row,
-    )
 
 
 def get_claim(conn: psycopg.Connection[dict[str, Any]], destination: str, finding_identity: str) -> dict[str, Any] | None:

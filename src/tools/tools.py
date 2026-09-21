@@ -10,7 +10,7 @@ from core.models import Finding
 from storage.factory import get_storage_client
 from ticket import claims
 from ticket.base import finding_identity
-from ticket.factory import get_ticket_client
+from ticket.config_store import get_ticket_client_for_repo
 from ticket.github_compare import is_ancestor
 
 
@@ -44,7 +44,8 @@ async def create_jira_tickets(findings: list[dict]) -> dict:
     """Create Jira tickets for findings with no open (or unresolved) claim, via the Postgres ledger."""
 
     def _create() -> dict:
-        ticket_client = get_ticket_client()
+        repo_full_name = findings[0].get("repo_full_name") if findings else None
+        ticket_client = get_ticket_client_for_repo(repo_full_name)
         destination = ticket_client.destination_id()
         created: list[dict] = []
         skipped: list[str] = []
@@ -98,7 +99,7 @@ async def reconcile_resolved_findings(findings: list[dict]) -> list[str]:
         if sample.default_branch is None or sample.branch != sample.default_branch:
             return []
 
-        ticket_client = get_ticket_client()
+        ticket_client = get_ticket_client_for_repo(sample.repo_full_name)
         destination = ticket_client.destination_id()
         current_identities = {finding_identity(f) for f in parsed}
         commit_sha = sample.commit_sha
