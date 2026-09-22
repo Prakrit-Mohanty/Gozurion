@@ -49,15 +49,29 @@ def _load_credentials(conn: psycopg.Connection[dict[str, Any]], destination_id: 
         return {row["key"]: row["value"] for row in cur.fetchall()}
 
 
-def get_ticket_client_for_repo(repo_full_name: str | None) -> TicketClient:
-    """DB-routed ticket client for `repo_full_name`, falling back to the flat env-var destination if unset/unconfigured."""
+def get_ticket_client_for_repo(
+    repo_full_name: str | None, conn: psycopg.Connection[dict[str, Any]] | None = None
+) -> TicketClient:
+    """
+    DB-routed ticket client for `repo_full_name`, falling back to the flat
+    env-var destination if unset/unconfigured. Pass `conn` when the caller
+    already has one open (e.g. the same connection it's about to use for
+    ticket_claims) so this doesn't open a second one just for the lookup;
+    omitted, it opens and closes its own.
+    """
     if repo_full_name is None:
         return get_ticket_client()
 
-    with get_connection() as conn:
-        destination = _lookup_destination(conn, repo_full_name)
-        if destination is None:
-            return get_ticket_client()
-        credentials = _load_credentials(conn, destination["id"])
+    if conn is not None:
+        return _resolve(conn, repo_full_name)
 
+    with get_connection() as owned_conn:
+        return _resolve(owned_conn, repo_full_name)
+
+
+def _resolve(conn: psycopg.Connection[dict[str, Any]], repo_full_name: str) -> TicketClient:
+    destination = _lookup_destination(conn, repo_full_name)
+    if destination is None:
+        return get_ticket_client()
+    credentials = _load_credentials(conn, destination["id"])
     return build_ticket_client(destination["ticket_backend"], credentials)

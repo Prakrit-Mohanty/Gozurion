@@ -44,13 +44,14 @@ async def create_jira_tickets(findings: list[dict]) -> dict:
     """Create Jira tickets for findings with no open (or unresolved) claim, via the Postgres ledger."""
 
     def _create() -> dict:
-        repo_full_name = findings[0].get("repo_full_name") if findings else None
-        ticket_client = get_ticket_client_for_repo(repo_full_name)
-        destination = ticket_client.destination_id()
         created: list[dict] = []
         skipped: list[str] = []
 
         with claims.get_connection() as conn:
+            repo_full_name = findings[0].get("repo_full_name") if findings else None
+            ticket_client = get_ticket_client_for_repo(repo_full_name, conn)
+            destination = ticket_client.destination_id()
+
             for raw in findings:
                 finding = Finding.model_validate(raw)
                 identity = finding_identity(finding)
@@ -99,16 +100,16 @@ async def reconcile_resolved_findings(findings: list[dict]) -> list[str]:
         if sample.default_branch is None or sample.branch != sample.default_branch:
             return []
 
-        ticket_client = get_ticket_client_for_repo(sample.repo_full_name)
-        destination = ticket_client.destination_id()
         current_identities = {finding_identity(f) for f in parsed}
         commit_sha = sample.commit_sha
-
-        transition_to_done = getattr(ticket_client, "transition_to_done", None)
-        add_comment = getattr(ticket_client, "add_comment", None)
         closed: list[str] = []
 
         with claims.get_connection() as conn:
+            ticket_client = get_ticket_client_for_repo(sample.repo_full_name, conn)
+            destination = ticket_client.destination_id()
+            transition_to_done = getattr(ticket_client, "transition_to_done", None)
+            add_comment = getattr(ticket_client, "add_comment", None)
+
             for row in claims.list_open(conn, destination):
                 if row["finding_identity"] in current_identities:
                     continue
