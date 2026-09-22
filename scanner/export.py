@@ -5,16 +5,28 @@
 # Depends on: S3/MinIO - report upload
 
 """
-Standalone report exporter: fetches findings from SonarQube, stamps
-commit/branch/repo metadata, uploads the JSON report to S3/MinIO (see
-docs/REPORT_CONTRACT.md). Runs before/outside the Temporal agent - the
-bucket/key it prints is what `aetherion agent sonar_to_jira` gets triggered
-with.
+Standalone report exporter: fetches findings from one or more scanners,
+stamps commit/branch/repo metadata, uploads one JSON report per scanner
+to S3/MinIO, plus a "combined" report merging all of them (see
+docs/REPORT_CONTRACT.md) - keyed as:
 
-    SONAR_URL=... SONAR_TOKEN=... SONAR_PROJECT_KEY=... \
+    {bucket}/{repo_full_name}/{branch}/{commit_sha}/{scanner}.json
+    {bucket}/{repo_full_name}/{branch}/{commit_sha}/combined.json
+
+Runs before/outside the Temporal agent - the bucket/key it prints
+(the "combined" one) is what `aetherion agent sonar_to_jira` gets
+triggered with; reconciliation needs that full snapshot, not a single
+scanner's slice.
+
+    ENABLED_SCANNERS=semgrep,trivy \
     S3_ENDPOINT_URL=http://localhost:9010 S3_ACCESS_KEY_ID=minioadmin \
-    S3_SECRET_ACCESS_KEY=minioadmin S3_BUCKET=sonar-reports \
+    S3_SECRET_ACCESS_KEY=minioadmin S3_BUCKET=reports \
     python3 -m scanner.export
+
+`ENABLED_SCANNERS` (default "semgrep,trivy") picks which of the clients
+below run - "sonarqube" is still wired in but disabled by default since
+it needs a running SonarQube server; both semgrep and trivy are local CLI
+tools with no server/token to stand up.
 """
 
 import json
@@ -24,8 +36,11 @@ import sys
 
 from pydantic import BaseModel
 
+from core.models import Finding
 from scanner import git_context
+from scanner.semgrep_scanner import SemgrepClient
 from scanner.sonarqube import SonarQubeClient
+from scanner.trivy_scanner import TrivyClient
 from storage.factory import get_storage_client
 
 logging.basicConfig(level=logging.INFO)
@@ -55,45 +70,103 @@ def gather_git_metadata() -> GitMetadata:
     return meta
 
 
-def build_report(meta: GitMetadata) -> list[dict]:
+def _run_sonarqube(meta: GitMetadata) -> list[Finding]:
     sonar_url = os.environ["SONAR_URL"]
     sonar_token = os.environ["SONAR_TOKEN"]
     project_key = os.environ["SONAR_PROJECT_KEY"]
-
-    client = SonarQubeClient(sonar_url, sonar_token)
-    findings = client.fetch_findings(project_key, meta.branch)
-
-    report = []
-    for finding in findings:
-        finding.branch = meta.branch
-        finding.commit_sha = meta.commit_sha
-        finding.repo_full_name = meta.repo_full_name
-        finding.default_branch = meta.default_branch
-        report.append(finding.model_dump(mode="json"))
-    return report
+    return SonarQubeClient(sonar_url, sonar_token).fetch_findings(project_key, meta.branch)
 
 
-def upload_report(report: list[dict], meta: GitMetadata) -> tuple[str, str]:
-    bucket = os.environ.get("S3_BUCKET", "sonar-reports")
-    key = f"{meta.repo_full_name or 'unknown-repo'}/{meta.branch or 'unknown-branch'}/{meta.commit_sha or 'unknown-commit'}.json"
+def _run_semgrep(meta: GitMetadata) -> list[Finding]:
+    config = os.environ.get("SEMGREP_CONFIG", "auto")
+    target = os.environ.get("SCAN_TARGET", ".")
+    return SemgrepClient(config).fetch_findings(target)
 
-    get_storage_client().upload(bucket, key, json.dumps(report).encode("utf-8"))
-    return bucket, key
+
+def _run_trivy(meta: GitMetadata) -> list[Finding]:
+    severities = os.environ.get("TRIVY_SEVERITY", "CRITICAL,HIGH,MEDIUM")
+    target = os.environ.get("SCAN_TARGET", ".")
+    return TrivyClient(severities).fetch_findings(target)
+
+
+_SCANNERS = {
+    "sonarqube": _run_sonarqube,
+    "semgrep": _run_semgrep,
+    "trivy": _run_trivy,
+}
+
+
+def _enabled_scanners() -> list[str]:
+    raw = os.environ.get("ENABLED_SCANNERS", "semgrep,trivy")
+    return [name.strip() for name in raw.split(",") if name.strip()]
+
+
+def _stamp(finding: Finding, meta: GitMetadata) -> dict:
+    finding.branch = meta.branch
+    finding.commit_sha = meta.commit_sha
+    finding.repo_full_name = meta.repo_full_name
+    finding.default_branch = meta.default_branch
+    return finding.model_dump(mode="json")
+
+
+def build_reports(meta: GitMetadata) -> dict[str, list[dict]]:
+    """One report per enabled scanner, keyed by scanner name, plus a
+    "combined" report - the full snapshot the agent's reconciliation step
+    needs (see docs/REPORT_CONTRACT.md); splitting per scanner without it
+    would make reconciliation wrongly auto-close tickets for findings from
+    scanners that particular fetch didn't include."""
+    by_scanner: dict[str, list[dict]] = {}
+    combined: list[dict] = []
+    for name in _enabled_scanners():
+        runner = _SCANNERS.get(name)
+        if runner is None:
+            logger.warning(f"Unknown scanner '{name}' in ENABLED_SCANNERS, skipping")
+            continue
+        stamped = [_stamp(finding, meta) for finding in runner(meta)]
+        by_scanner[name] = stamped
+        combined.extend(stamped)
+
+    return {**by_scanner, "combined": combined}
+
+
+def upload_reports(reports: dict[str, list[dict]], meta: GitMetadata) -> tuple[str, dict[str, str]]:
+    bucket = os.environ.get("S3_BUCKET", "reports")
+    prefix = f"{meta.repo_full_name or 'unknown-repo'}/{meta.branch or 'unknown-branch'}/{meta.commit_sha or 'unknown-commit'}"
+    storage = get_storage_client()
+
+    keys = {}
+    for name, report in reports.items():
+        key = f"{prefix}/{name}.json"
+        storage.upload(bucket, key, json.dumps(report).encode("utf-8"))
+        keys[name] = key
+    return bucket, keys
 
 
 def main() -> None:
     meta = gather_git_metadata()
-    report = build_report(meta)
-    bucket, key = upload_report(report, meta)
-    logger.info(f"Uploaded {len(report)} finding(s) to s3://{bucket}/{key}")
+    reports = build_reports(meta)
+    bucket, keys = upload_reports(reports, meta)
 
+    for name, key in keys.items():
+        logger.info(f"Uploaded {len(reports[name])} finding(s) to s3://{bucket}/{key}")
+
+    combined_key = keys["combined"]
     github_output = os.environ.get("GITHUB_OUTPUT")
     if github_output:
         with open(github_output, "a") as f:
             f.write(f"bucket={bucket}\n")
-            f.write(f"key={key}\n")
+            f.write(f"key={combined_key}\n")
 
-    print(json.dumps({"bucket": bucket, "key": key, "finding_count": len(report)}))
+    print(
+        json.dumps(
+            {
+                "bucket": bucket,
+                "key": combined_key,
+                "keys": keys,
+                "finding_count": len(reports["combined"]),
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

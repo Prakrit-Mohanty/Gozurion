@@ -34,7 +34,7 @@ services:
       mc alias set myminio http://minio:9000 minioadmin minioadmin;
       mc mb --ignore-existing myminio/workflows;
       mc mb --ignore-existing myminio/activities;
-      mc mb --ignore-existing myminio/sonar-reports;
+      mc mb --ignore-existing myminio/reports;
       "
     networks:
       - temporal-network
@@ -57,6 +57,30 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - temporal-network
+
+  sonarqube:
+    container_name: gozurion-sonarqube
+    restart: unless-stopped
+    image: sonarqube:community
+    # No SONAR_JDBC_* set on purpose - runs against the bundled embedded
+    # database, which is fine for a local single-node trial (just not for
+    # production). Keeps this self-contained, no separate Postgres role/
+    # password to wire up for a local SonarQube instance.
+    environment:
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+    ports:
+      - "${SONARQUBE_PORT:-9000}:9000"
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/sonarqube/data:/opt/sonarqube/data
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/sonarqube/extensions:/opt/sonarqube/extensions
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/sonarqube/logs:/opt/sonarqube/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/api/system/status | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
     networks:
       - temporal-network
 

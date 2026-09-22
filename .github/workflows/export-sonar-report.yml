@@ -1,9 +1,12 @@
-name: Export SonarQube report to S3
+name: Export scan report to S3
 
-# Reusable, org-wide workflow: scans the calling repo with a self-hosted
-# SonarQube instance, waits for analysis to finish indexing, then runs
-# scanner/export.py (gozurion-export-report) to upload the findings as a
-# JSON report to S3/MinIO. Stops there - it does NOT trigger the
+# Reusable, org-wide workflow: scans the calling repo (semgrep/trivy by
+# default - both local CLI tools, no server to stand up; SonarQube is
+# still supported but opt-in via `enabled_scanners`, since it needs a
+# running SonarQube server + token), then runs scanner/export.py
+# (gozurion-export-report) to upload the findings as JSON reports to
+# S3/MinIO - one file per scanner, plus a "combined" full-snapshot file
+# (see docs/REPORT_CONTRACT.md). Stops there - it does NOT trigger the
 # Aetherion agent itself. Once the agent is published on the Aetherion
 # platform, ticket creation is triggered from there, not from this
 # workflow.
@@ -11,20 +14,54 @@ name: Export SonarQube report to S3
 # Called from another repo like:
 #
 #   jobs:
-#     export-sonar-report:
+#     export-scan-report:
 #       uses: Prakrit-Mohanty/Gozurion/.github/workflows/export-sonar-report.yml@main
 #       secrets:
-#         SONAR_URL: ${{ secrets.SONAR_URL }}
-#         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 #         S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
 #         S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
 #         S3_BUCKET: ${{ secrets.S3_BUCKET }}
+#
+# To also/instead run SonarQube:
+#
+#   with:
+#     enabled_scanners: semgrep,trivy,sonarqube
+#   secrets:
+#     SONAR_URL: ${{ secrets.SONAR_URL }}
+#     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+#     ...
 
 on:
+  # Manual trigger for running this directly in Gozurion's own Actions tab
+  # (Actions -> Export scan report to S3 -> Run workflow) - handy for
+  # testing the exporter against Gozurion itself without another repo
+  # calling in via workflow_call. Reads secrets straight from this repo's
+  # own Settings -> Secrets (no secrets: block - workflow_dispatch doesn't
+  # have one, unlike workflow_call below).
+  workflow_dispatch:
+    inputs:
+      enabled_scanners:
+        description: "Comma-separated scanners to run: semgrep, trivy, sonarqube"
+        required: false
+        type: string
+        default: semgrep,trivy
+      sonar_project_key:
+        description: "SonarQube project key - defaults to this repo's name. Only used if 'sonarqube' is in enabled_scanners."
+        required: false
+        type: string
+      gozurion_ref:
+        description: "Branch/tag of Gozurion to install the exporter from"
+        required: false
+        type: string
+        default: main
   workflow_call:
     inputs:
+      enabled_scanners:
+        description: "Comma-separated scanners to run: semgrep, trivy, sonarqube"
+        required: false
+        type: string
+        default: semgrep,trivy
       sonar_project_key:
-        description: "SonarQube project key - defaults to the calling repo's name"
+        description: "SonarQube project key - defaults to the calling repo's name. Only used if 'sonarqube' is in enabled_scanners."
         required: false
         type: string
       gozurion_ref:
@@ -34,9 +71,9 @@ on:
         default: main
     secrets:
       SONAR_URL:
-        required: true
+        required: false  # only needed if 'sonarqube' is in enabled_scanners
       SONAR_TOKEN:
-        required: true
+        required: false  # only needed if 'sonarqube' is in enabled_scanners
       S3_ENDPOINT_URL:
         required: false  # blank = real AWS S3; set for MinIO
       S3_ACCESS_KEY_ID:
@@ -65,13 +102,30 @@ jobs:
         with:
           fetch-depth: 0  # SonarQube branch analysis wants full history
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install semgrep
+        if: contains(inputs.enabled_scanners, 'semgrep')
+        run: pip install semgrep
+
+      - name: Install trivy
+        if: contains(inputs.enabled_scanners, 'trivy')
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin
+
       - name: Set up Java
+        if: contains(inputs.enabled_scanners, 'sonarqube')
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
       - name: SonarQube scan
+        if: contains(inputs.enabled_scanners, 'sonarqube')
         uses: sonarsource/sonarqube-scan-action@v4
         env:
           SONAR_HOST_URL: ${{ secrets.SONAR_URL }}
@@ -80,22 +134,18 @@ jobs:
           args: >
             ${{ inputs.sonar_project_key && format('-Dsonar.projectKey={0}', inputs.sonar_project_key) || '' }}
 
-      - name: Wait for analysis to finish indexing
+      - name: Wait for SonarQube analysis to finish indexing
         # SonarQube's search index can lag a few seconds behind the scan
         # step completing - this polls the background task rather than a
         # blind sleep. continue-on-error since we only want it to BLOCK
         # until indexing is done, never fail the pipeline on a failed
         # quality gate - export must still run regardless.
+        if: contains(inputs.enabled_scanners, 'sonarqube')
         uses: sonarsource/sonarqube-quality-gate-action@v1
         continue-on-error: true
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
 
       - name: Checkout Gozurion (exporter source)
         uses: actions/checkout@v4
@@ -115,6 +165,8 @@ jobs:
       - name: Export report to S3
         id: export
         env:
+          ENABLED_SCANNERS: ${{ inputs.enabled_scanners }}
+          SCAN_TARGET: .
           SONAR_URL: ${{ secrets.SONAR_URL }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_PROJECT_KEY: ${{ inputs.sonar_project_key || github.event.repository.name }}
