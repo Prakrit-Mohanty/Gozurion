@@ -51,7 +51,3 @@ Thumbs.db
 
 # Docker volume data
 volumes/
-
-# Real ticket routing config (repo/destination mapping) - only the
-# .example.yaml template is committed, see scripts/seed_ticket_routing.py
-config/ticket-routing.yaml
