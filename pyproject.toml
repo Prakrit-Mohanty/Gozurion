@@ -25,15 +25,14 @@ dependencies = [
 # macOS-only wheel.
 [project.optional-dependencies]
 agent = [
-    "aetherion-sdk @ https://sdk.sbox.aetherion.io/Darwin/aetherion_sdk-0.0.92-cp312-cp312-macosx_26_0_arm64.whl",
+    # Marker matches the wheel's own tag (cp312-macosx-arm64) - without it,
+    # uv's universal resolution also tries to solve this extra for every
+    # other python_version/sys_platform this project's requires-python
+    # allows (e.g. 3.13, win32) and fails outright since no such wheel
+    # exists for them, even though nothing would ever actually install
+    # this extra there.
+    "aetherion-sdk @ https://sdk.sbox.aetherion.io/Darwin/aetherion_sdk-0.0.92-cp312-cp312-macosx_26_0_arm64.whl ; python_version == '3.12' and sys_platform == 'darwin' and platform_machine == 'arm64'",
     "temporalio",
-    "psycopg[binary]",
-]
-# scripts/seed_ticket_routing.py only - not needed by the agent or the
-# exporter, kept out of both so neither pulls in pyyaml for no reason.
-ops = [
-    "psycopg[binary]",
-    "pyyaml",
 ]
 
 [project.scripts]

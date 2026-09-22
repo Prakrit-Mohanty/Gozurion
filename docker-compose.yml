@@ -39,27 +39,6 @@ services:
     networks:
       - temporal-network
 
-  postgres:
-    container_name: gozurion-postgres
-    restart: unless-stopped
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-gozurion}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gozurion}
-      POSTGRES_DB: ${POSTGRES_DB:-gozurion}
-    ports:
-      - "${POSTGRES_PORT:-5433}:5432"
-    volumes:
-      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/postgres:/var/lib/postgresql/data
-      - ./ticket/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gozurion} -d ${POSTGRES_DB:-gozurion}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    networks:
-      - temporal-network
-
   sonarqube:
     container_name: gozurion-sonarqube
     restart: unless-stopped

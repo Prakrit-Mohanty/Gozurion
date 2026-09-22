@@ -4,10 +4,10 @@
 # Depends on: GitHub REST API - repo default branch lookup
 
 """
-Stamps the git/GitHub metadata create_jira_tickets/reconcile_resolved_findings
-need (see docs/REPORT_CONTRACT.md): commit_sha, branch, repo_full_name,
-default_branch. Prefers GitHub Actions' own env vars (set automatically
-on every run) over shelling out to git, which also works outside Actions.
+Stamps git/GitHub metadata onto the report (see docs/REPORT_CONTRACT.md):
+commit_sha, branch, repo_full_name, default_branch. Prefers GitHub Actions'
+own env vars (set automatically on every run) over shelling out to git,
+which also works outside Actions.
 """
 
 import logging

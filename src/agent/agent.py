@@ -10,22 +10,14 @@ from aetherion_sdk import agent, toolExecutor
 @agent()
 async def sonar_to_jira(payload: Dict[str, Any]) -> dict:
     """Agent that:
-    - Pulls a Sonar findings report (JSON) from S3/MinIO
+    - Pulls a Sonar findings report (JSON) from S3/MinIO (bucket from env, key from input)
     - Creates Jira tickets for any findings that don't already have one
-    - Auto-closes tickets for findings no longer present (default-branch reports only)
     """
 
-    bucket = payload["bucket"]
     key = payload["key"]
+    jira_url = payload["jira_url"]
 
-    findings = await toolExecutor.execute("fetch_report_from_s3", bucket, key)
-    result = await toolExecutor.execute("create_jira_tickets", findings)
-    closed = await toolExecutor.execute("reconcile_resolved_findings", findings)
+    findings = await toolExecutor.execute("fetch_report_from_s3", key)
+    result = await toolExecutor.execute("create_jira_tickets", findings, jira_url)
 
-    return {
-        "bucket": bucket,
-        "key": key,
-        "finding_count": len(findings),
-        "closed": closed,
-        **result,
-    }
+    return {"key": key, "finding_count": len(findings), **result}
