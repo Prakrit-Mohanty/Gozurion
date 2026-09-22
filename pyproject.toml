@@ -29,6 +29,12 @@ agent = [
     "temporalio",
     "psycopg[binary]",
 ]
+# scripts/seed_ticket_routing.py only - not needed by the agent or the
+# exporter, kept out of both so neither pulls in pyyaml for no reason.
+ops = [
+    "psycopg[binary]",
+    "pyyaml",
+]
 
 [project.scripts]
 gozurion-export-report = "scanner.export:main"
