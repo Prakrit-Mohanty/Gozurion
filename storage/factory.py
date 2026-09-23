@@ -15,17 +15,15 @@ def build_storage_client(backend: str, credentials: dict[str, str]) -> ReportSto
         raise ValueError(f"Unrecognized STORAGE_BACKEND '{backend}'. Expected 's3'.")
 
     return S3Storage(
-        endpoint_url=credentials.get("s3_endpoint_url"),
         access_key_id=credentials.get("s3_access_key_id"),
         secret_access_key=credentials.get("s3_secret_access_key"),
     )
 
 
 def get_storage_client() -> ReportStorage:
-    """Reads STORAGE_BACKEND/S3_* from the environment - MinIO locally, real S3 in prod, same code path (only S3_ENDPOINT_URL differs)."""
+    """Reads STORAGE_BACKEND/S3_* from the environment - always real AWS S3."""
     backend = os.environ.get("STORAGE_BACKEND", "s3")
     credentials = {
-        "s3_endpoint_url": os.environ.get("S3_ENDPOINT_URL", ""),
         "s3_access_key_id": os.environ.get("S3_ACCESS_KEY_ID", ""),
         "s3_secret_access_key": os.environ.get("S3_SECRET_ACCESS_KEY", ""),
     }

@@ -19,8 +19,7 @@ triggered with; reconciliation needs that full snapshot, not a single
 scanner's slice.
 
     ENABLED_SCANNERS=semgrep,trivy \
-    S3_ENDPOINT_URL=http://localhost:9010 S3_ACCESS_KEY_ID=minioadmin \
-    S3_SECRET_ACCESS_KEY=minioadmin S3_BUCKET=reports \
+    S3_ACCESS_KEY_ID=... S3_SECRET_ACCESS_KEY=... S3_BUCKET=reports \
     python3 -m scanner.export
 
 `ENABLED_SCANNERS` (default "semgrep,trivy") picks which of the clients

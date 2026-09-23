@@ -48,9 +48,8 @@ the agent — kept for compatibility/future use, not a functional requirement to
 
 `fetch_report_from_s3` (despite the name) and `scanner/export.py` never touch `boto3`
 directly — both go through `storage.base.ReportStorage` (`upload`/`download`), built
-by `storage/factory.py`. `storage/s3_storage.py` is the only implementation today,
-and it's already backend-agnostic in practice: MinIO locally and real AWS S3 are the
-exact same code path, differing only in `S3_ENDPOINT_URL`.
+by `storage/factory.py`. `storage/s3_storage.py` is the only implementation today, and it always talks to real
+AWS S3.
 
 ## The Agent — `src/agent/agent.py`
 
