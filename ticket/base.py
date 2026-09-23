@@ -24,12 +24,20 @@ _IDENTITY_HASH_LENGTH = 20
 
 def finding_identity(finding: Finding) -> str:
     """
-    Branch-agnostic identity: same rule at the same file/line = same
-    issue, regardless of which branch/scan reported it. Excludes
-    finding.key/finding.branch on purpose - a scanner commonly stamps a
-    different key per branch for the same underlying issue.
+    Branch-agnostic identity: same rule at the same file/line in the same
+    repo = same issue, regardless of which branch/scan reported it.
+    Excludes finding.key/finding.branch on purpose - a scanner commonly
+    stamps a different key per branch for the same underlying issue.
+
+    Includes repo_full_name deliberately - deployed org-wide, one Jira
+    project can (and does) receive tickets from many repos (JIRA_PROJECT_KEY
+    is a single fixed value, not routed per repo). Without it, two
+    unrelated repos hitting the same rule at the same relative path/line
+    (common with shared CI templates/boilerplate) would collide onto the
+    same label, and the second repo's finding would be silently treated
+    as already-ticketed and never get one.
     """
-    parts = [finding.component, str(finding.line), finding.rule_key or "", finding.finding_type]
+    parts = [finding.repo_full_name or "", finding.component, str(finding.line), finding.rule_key or "", finding.finding_type]
     return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:_IDENTITY_HASH_LENGTH]
 
 

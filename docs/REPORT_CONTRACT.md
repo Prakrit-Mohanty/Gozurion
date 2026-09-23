@@ -22,9 +22,11 @@ is the single source of truth for that fixed path; keep the exporter and
 
 One report = one scan of one branch at one commit. `create_jira_tickets`
 dedupes findings against Jira via a label search on `finding_identity()`
-(`ticket/base.py` - a hash of `component`+`line`+`rule_key`+`finding_type`,
-deliberately branch/key-independent) - no other ordering or completeness
-requirement on the report itself.
+(`ticket/base.py` - a hash of `repo_full_name`+`component`+`line`+`rule_key`+
+`finding_type`, deliberately branch/key-independent, but repo-specific -
+`JIRA_PROJECT_KEY` is one fixed value for every repo this agent processes,
+not routed per repo, so the hash has to disambiguate repos itself) - no
+other ordering or completeness requirement on the report itself.
 
 `commit_sha`, `repo_full_name`, and `default_branch` are stamped by
 `scanner/git_context.py` but not currently read by the agent - kept in the

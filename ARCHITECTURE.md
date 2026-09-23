@@ -87,11 +87,16 @@ credentials dict itself).
 ticket already labeled `issue-{finding_identity(finding)}`; if none exists,
 `create_ticket(finding)` creates one with that same label stamped on it.
 
-`finding_identity()` (`ticket/base.py`) hashes `component + line + rule_key +
-finding_type` — deliberately excludes `finding.key`/`finding.branch`, so the same bug
-reported from two different branches (SonarQube scopes its own `key` per branch)
-resolves to the same identity and the same Jira label, avoiding duplicate tickets
-without needing any external state.
+`finding_identity()` (`ticket/base.py`) hashes `repo_full_name + component + line +
+rule_key + finding_type` — deliberately excludes `finding.key`/`finding.branch`, so
+the same bug reported from two different branches (SonarQube scopes its own `key`
+per branch) resolves to the same identity and the same Jira label, avoiding
+duplicate tickets without needing any external state. `repo_full_name` is included
+on purpose, unlike branch/key: deployed org-wide, `JIRA_PROJECT_KEY` is one fixed
+value for every repo this agent processes (no per-repo routing), so without it two
+unrelated repos hitting the same rule at the same relative path/line - plausible
+with shared CI templates/boilerplate - would collide onto the same label and the
+second repo's finding would silently never get ticketed.
 
 There's deliberately no auto-close/reconciliation step and no per-repo DB-driven
 Jira routing (an earlier iteration explored both via a Postgres ledger and
