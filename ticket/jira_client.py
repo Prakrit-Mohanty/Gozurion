@@ -59,6 +59,15 @@ def _scanner_label(source_tool: str) -> str:
     return _SCANNER_DISPLAY_NAMES.get(source_tool, source_tool.capitalize())
 
 
+def _title_prefix(finding: Finding) -> str:
+    """"Semgrep [org/repo]: " - deployed org-wide with every repo's tickets landing in
+    one Jira project (see finding_identity()), both which scanner and which repo need
+    to be visible without opening the ticket. Omits the repo bracket if unset (e.g. a
+    manual local run scanner/git_context.py couldn't stamp)."""
+    scanner = _scanner_label(finding.source_tool)
+    return f"{scanner} [{finding.repo_full_name}]: " if finding.repo_full_name else f"{scanner}: "
+
+
 class JiraClient(TicketClient):
     def __init__(self, base_url: str, email: str, api_token: str, project_key: str):
         self.base_url = base_url.rstrip("/")
@@ -151,7 +160,7 @@ class JiraClient(TicketClient):
         return SEVERITY_TO_PRIORITY.get(severity, DEFAULT_PRIORITY)
 
     def _build_summary(self, finding: Finding) -> str:
-        summary = f"{_scanner_label(finding.source_tool)}: {finding.title}"
+        summary = f"{_title_prefix(finding)}{finding.title}"
         if len(summary) > SUMMARY_MAX_LENGTH:
             summary = summary[: SUMMARY_MAX_LENGTH - 3] + "..."
         return summary
@@ -374,7 +383,7 @@ class JiraClient(TicketClient):
 
     def _build_rollup_description(self, remaining: list[Finding]) -> dict:
         lines = [
-            f"{_scanner_label(finding.source_tool)}: {finding.key} - {finding.finding_type} - "
+            f"{_title_prefix(finding)}{finding.key} - {finding.finding_type} - "
             f"{finding.severity.value} - {finding.title}"
             for finding in remaining[:_ROLLUP_DESCRIPTION_MAX_LINES]
         ]
