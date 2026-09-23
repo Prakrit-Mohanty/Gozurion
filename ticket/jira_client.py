@@ -46,6 +46,19 @@ def _normalize_label_value(value: str) -> str:
     return value.strip().lower().replace(" ", "-")
 
 
+_SCANNER_DISPLAY_NAMES = {
+    "semgrep": "Semgrep",
+    "trivy": "Trivy",
+    "sonarqube": "SonarQube",
+}
+
+
+def _scanner_label(source_tool: str) -> str:
+    """Display name for a finding's source_tool, e.g. "Semgrep" - falls back to a
+    capitalized version of the raw value for any scanner not in the map above."""
+    return _SCANNER_DISPLAY_NAMES.get(source_tool, source_tool.capitalize())
+
+
 class JiraClient(TicketClient):
     def __init__(self, base_url: str, email: str, api_token: str, project_key: str):
         self.base_url = base_url.rstrip("/")
@@ -138,7 +151,7 @@ class JiraClient(TicketClient):
         return SEVERITY_TO_PRIORITY.get(severity, DEFAULT_PRIORITY)
 
     def _build_summary(self, finding: Finding) -> str:
-        summary = finding.title
+        summary = f"{_scanner_label(finding.source_tool)}: {finding.title}"
         if len(summary) > SUMMARY_MAX_LENGTH:
             summary = summary[: SUMMARY_MAX_LENGTH - 3] + "..."
         return summary
@@ -361,7 +374,8 @@ class JiraClient(TicketClient):
 
     def _build_rollup_description(self, remaining: list[Finding]) -> dict:
         lines = [
-            f"{finding.key} - {finding.finding_type} - {finding.severity.value} - {finding.title}"
+            f"{_scanner_label(finding.source_tool)}: {finding.key} - {finding.finding_type} - "
+            f"{finding.severity.value} - {finding.title}"
             for finding in remaining[:_ROLLUP_DESCRIPTION_MAX_LINES]
         ]
         if len(remaining) > _ROLLUP_DESCRIPTION_MAX_LINES:
