@@ -23,7 +23,7 @@ def build_schema() -> dict:
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "SonarToJira findings report",
-        "description": "A report object is a JSON array of these Finding objects, uploaded to S3/MinIO.",
+        "description": "A report object is a JSON array of these Finding objects, uploaded to S3.",
         "type": "array",
         "items": finding_schema,
     }

@@ -2,12 +2,12 @@
 # Author: Wasiullah Rafeeq S
 #
 # Depends on: SonarQube (SonarSource) - findings fetch
-# Depends on: S3/MinIO - report upload
+# Depends on: S3 - report upload
 
 """
 Standalone report exporter: fetches findings from one or more scanners,
 stamps commit/branch/repo metadata, uploads one JSON report per scanner
-to S3/MinIO, plus a "combined" report merging all of them (see
+to S3, plus a "combined" report merging all of them (see
 docs/REPORT_CONTRACT.md) - keyed twice, once per run under its own
 commit (history) and once overwriting a fixed "latest" pointer:
 

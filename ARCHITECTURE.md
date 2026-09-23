@@ -7,7 +7,7 @@ Any org repo's CI (calls the reusable workflow below)
   semgrep/trivy/sonarqube  →  scanner/export.py (this repo)
                           |
                           v
-        S3/MinIO - one shared bucket, {repo_full_name}/{branch}/{commit_sha}/combined.json
+        S3 - one shared bucket, {repo_full_name}/{branch}/{commit_sha}/combined.json
                           (history) and {repo_full_name}/{branch}/latest/combined.json
                           (always overwritten - what the agent reads)
                           |

@@ -1,7 +1,7 @@
 {
     "name": "sonar_to_jira_agent",
     "version": "1.0.0",
-    "description": "Pulls the latest combined findings report for a repo/branch from S3/MinIO and creates Jira tickets.",
+    "description": "Pulls the latest combined findings report for a repo/branch from S3 and creates Jira tickets.",
     "config": {
         "triggers": [
             {
