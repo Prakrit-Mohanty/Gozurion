@@ -5,12 +5,18 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import tempfile
+from pathlib import Path
 
 from aetherion_sdk import tool
+from temporalio import activity
+
 from core.models import Finding
 from scanner.export import latest_prefix
 from storage.factory import get_storage_client
+from ticket.base import finding_identity
 from ticket.factory import build_ticket_client
+from ticket.screenshot import build_screenshot
 
 
 @tool()
@@ -28,9 +34,24 @@ async def fetch_report_from_s3(repo_full_name: str, branch: str = "main") -> lis
     return await asyncio.to_thread(_fetch)
 
 
+def _attach_screenshot(ticket_client, ticket_key: str, finding: Finding) -> None:
+    """Best-effort, like sprint assignment/remote links in JiraClient.create_ticket - must never fail ticket creation."""
+    attach = getattr(ticket_client, "attach_screenshot", None)
+    if attach is None:
+        return
+    try:
+        image_bytes = build_screenshot(finding, github_token=os.environ.get("GITHUB_TOKEN"))
+        image_path = Path(tempfile.gettempdir()) / f"{finding_identity(finding)}.png"
+        image_path.write_bytes(image_bytes)
+        attach(ticket_key, image_path)
+    except Exception as e:
+        activity.logger.warning(f"Screenshot attachment failed for {ticket_key}: {e}")
+
+
 @tool()
 async def create_jira_tickets(findings: list[dict], jira_url: str) -> dict:
-    """Create Jira tickets for findings that don't already have one (Jira label search, no DB)."""
+    """Create Jira tickets for findings that don't already have one (Jira label search, no DB) -
+    each new ticket gets a screenshot attached (code snippet, or an info card for line-less findings)."""
 
     def _create() -> dict:
         credentials = {
@@ -51,6 +72,7 @@ async def create_jira_tickets(findings: list[dict], jira_url: str) -> dict:
                 continue
             ticket_key = ticket_client.create_ticket(finding)
             created.append({"finding_key": finding.key, "ticket_key": ticket_key})
+            _attach_screenshot(ticket_client, ticket_key, finding)
 
         return {"created": created, "skipped": skipped}
 

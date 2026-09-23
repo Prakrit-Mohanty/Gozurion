@@ -102,6 +102,24 @@ come from `.env`; `jira_url` comes from the trigger input instead, so the same
 deployment can point different runs at different Jira instances without touching
 `.env` per call.
 
+## Screenshots — `ticket/screenshot.py`
+
+Every newly created ticket gets a PNG attached via `JiraClient.attach_screenshot()`
+(a bonus capability - `create_jira_tickets` detects it with `getattr`, same pattern
+as the rest of the "not part of the `TicketClient` contract" methods). Two cases:
+
+- **Line-based findings** (semgrep, sonarqube, trivy secrets) — `finding.line` plus
+  `repo_full_name`/`commit_sha` (stamped by the exporter) are enough to fetch the
+  actual source from `raw.githubusercontent.com` at that commit and render a
+  syntax-highlighted snippet (Pygments + Pillow) centered on that line.
+- **Line-less findings** (trivy dependency vulnerabilities - `component` is a
+  package name, not a source location) — no source to show, so a plain info card
+  instead (title/component/severity/rule/message/how_to_fix as text).
+
+Best-effort like sprint assignment/remote links already are in
+`JiraClient.create_ticket` - a failed fetch or render never fails ticket creation
+itself, just skips the attachment for that one ticket.
+
 ## How the tools are wired together
 
 `toolExecutor.execute("fetch_report_from_s3", repo_full_name, branch)` is string-based dispatch — the
