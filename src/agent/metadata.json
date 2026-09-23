@@ -1,15 +1,23 @@
 {
     "name": "sonar_to_jira_agent",
     "version": "1.0.0",
-    "description": "Pulls a Sonar findings report from S3/MinIO and creates Jira tickets.",
+    "description": "Pulls the latest combined findings report for a repo/branch from S3/MinIO and creates Jira tickets.",
     "config": {
         "triggers": [
             {
-              "name": "key",
+              "name": "repo_full_name",
               "type": "str",
               "required": true,
-              "description": "S3/MinIO object key of the findings report (JSON) - bucket comes from S3_BUCKET",
-              "friendly_name": "Report Key"
+              "description": "GitHub repo to fetch the latest report for, as '{owner}/{repo}' - matches what scanner/export.py stamped on the report",
+              "friendly_name": "Repository"
+            },
+            {
+              "name": "branch",
+              "type": "str",
+              "required": false,
+              "default": "main",
+              "description": "Branch to fetch the latest report for (defaults to 'main')",
+              "friendly_name": "Branch"
             },
             {
               "name": "jira_url",

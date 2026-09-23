@@ -8,16 +8,21 @@ import os
 
 from aetherion_sdk import tool
 from core.models import Finding
+from scanner.export import latest_prefix
 from storage.factory import get_storage_client
 from ticket.factory import build_ticket_client
 
 
 @tool()
-async def fetch_report_from_s3(key: str) -> list[dict]:
-    """Download a Sonar findings report (JSON list of Finding dicts) - bucket comes from S3_BUCKET."""
+async def fetch_report_from_s3(repo_full_name: str, branch: str = "main") -> list[dict]:
+    """Download the latest combined findings report (JSON list of Finding dicts) for a repo/branch -
+    bucket comes from S3_BUCKET. Reads the fixed "latest" pointer scanner/export.py overwrites every
+    run, not a commit-specific key - deployed org-wide, the agent is only ever told which repo/branch
+    to check, never a fresh key per run."""
 
     def _fetch() -> list[dict]:
         bucket = os.environ["S3_BUCKET"]
+        key = f"{latest_prefix(repo_full_name, branch)}/combined.json"
         return json.loads(get_storage_client().download(bucket, key))
 
     return await asyncio.to_thread(_fetch)

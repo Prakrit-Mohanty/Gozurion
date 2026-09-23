@@ -4,10 +4,12 @@
 
 ```
 Any org repo's CI (calls the reusable workflow below)
-  sonar-scanner  →  scanner/export.py (this repo)
+  semgrep/trivy/sonarqube  →  scanner/export.py (this repo)
                           |
                           v
-        S3/MinIO - one shared bucket, key = {repo_full_name}/{branch}/{commit_sha}.json
+        S3/MinIO - one shared bucket, {repo_full_name}/{branch}/{commit_sha}/combined.json
+                          (history) and {repo_full_name}/{branch}/latest/combined.json
+                          (always overwritten - what the agent reads)
                           |
                           v
      Temporal agent (this repo): fetch_report_from_s3 -> create_jira_tickets
@@ -56,22 +58,27 @@ AWS S3.
 ```python
 @agent()
 async def sonar_to_jira(payload: Dict[str, Any]) -> dict:
-    key = payload["key"]
+    repo_full_name = payload["repo_full_name"]
+    branch = payload.get("branch", "main")
     jira_url = payload["jira_url"]
-    findings = await toolExecutor.execute("fetch_report_from_s3", key)
+    findings = await toolExecutor.execute("fetch_report_from_s3", repo_full_name, branch)
     result = await toolExecutor.execute("create_jira_tickets", findings, jira_url)
-    return {"key": key, "finding_count": len(findings), **result}
+    return {"repo_full_name": repo_full_name, "branch": branch, "finding_count": len(findings), **result}
 ```
 
 A thin Temporal *workflow* — no I/O itself, two tool calls, merges the result.
 `bucket` is **not** a trigger input — it comes from the `S3_BUCKET` env var, since
-it's fixed per deployment rather than something that varies per run. `key` (the
-report's object key) and `jira_url` (which Jira instance to create tickets in) are
-the two trigger inputs (`src/agent/metadata.json`) — the rest of the Jira
-destination (`JIRA_EMAIL`/`JIRA_API_TOKEN`/`JIRA_PROJECT_KEY`) still comes from
-`.env`, via `ticket/factory.py`'s `build_ticket_client()` (the pure, env-free
-constructor — `create_jira_tickets` merges the input `jira_url` with those env
-values into one credentials dict itself).
+it's fixed per deployment rather than something that varies per run. `repo_full_name`
+(which repo's report to fetch), `branch` (defaults to `main`), and `jira_url` (which
+Jira instance to create tickets in) are the trigger inputs (`src/agent/metadata.json`).
+Deployed org-wide across many repos, nothing hands the agent a fresh S3 key per
+run — `fetch_report_from_s3` resolves `repo_full_name`+`branch` to the fixed
+`latest/combined.json` pointer `scanner/export.py` overwrites every export (see
+`docs/REPORT_CONTRACT.md`). The rest of the Jira destination
+(`JIRA_EMAIL`/`JIRA_API_TOKEN`/`JIRA_PROJECT_KEY`) still comes from `.env`, via
+`ticket/factory.py`'s `build_ticket_client()` (the pure, env-free constructor —
+`create_jira_tickets` merges the input `jira_url` with those env values into one
+credentials dict itself).
 
 ## Dedup — a live Jira label search, no database
 
@@ -97,7 +104,7 @@ deployment can point different runs at different Jira instances without touching
 
 ## How the tools are wired together
 
-`toolExecutor.execute("fetch_report_from_s3", key)` is string-based dispatch — the
+`toolExecutor.execute("fetch_report_from_s3", repo_full_name, branch)` is string-based dispatch — the
 SDK looks up whichever function was registered under that name via `@tool()` and
 runs it as a Temporal activity, with its own independent retry/timeout policy. Going
 through `toolExecutor` (not calling the functions directly) is what gives each step
@@ -105,10 +112,14 @@ Temporal's durability.
 
 ## Triggering it
 
-`src/agent/metadata.json` declares `key` and `jira_url` as required string triggers
-— what `aetherion test` turns into a form, and what `aetherion agent sonar_to_jira
-'{"key": "...", "jira_url": "..."}'` expects as payload. **Nothing in this repo
-calls that yet** — the exporter's CI job stops at uploading to S3 (see above).
+`src/agent/metadata.json` declares `repo_full_name` (required) and `jira_url`
+(required) plus `branch` (optional, defaults to `main`) as string triggers — what
+`aetherion test` turns into a form, and what `aetherion agent sonar_to_jira
+'{"repo_full_name": "...", "branch": "...", "jira_url": "..."}'` expects as payload.
+**Nothing in this repo calls that yet** — the exporter's CI job stops at uploading
+to S3 (see above). Whatever eventually triggers this per repo (the Aetherion
+platform, a schedule, a webhook) only ever needs to know the repo's identity, not
+any report-specific key.
 
 ## How it actually runs (execution mechanics)
 
@@ -126,7 +137,7 @@ what's on each side of it.
   (both set in `.env`). Has to already be running before anything below can happen —
   it's what holds the `sonar_to_jira` workflow code and the two tool functions in
   memory.
-- **`aetherion agent sonar_to_jira '{"key": ..., "jira_url": ...}'`** — a short-lived CLI invocation, a
+- **`aetherion agent sonar_to_jira '{"repo_full_name": ..., "jira_url": ...}'`** — a short-lived CLI invocation, a
   Temporal *client* asking the server to start a new workflow execution, then (by
   default, `--wait`) blocking on the result.
 
@@ -138,7 +149,7 @@ what's on each side of it.
 2. The workflow worker polls that queue, gets the task, starts executing
    `sonar_to_jira`'s Python code inside Temporal's deterministic workflow sandbox —
    what makes replay (below) possible.
-3. Execution reaches `await toolExecutor.execute("fetch_report_from_s3", key)`. This
+3. Execution reaches `await toolExecutor.execute("fetch_report_from_s3", repo_full_name, branch)`. This
    does **not** call the Python function directly — it asks Temporal server to
    schedule an *activity task* on the tool task queue, and the workflow suspends
    right there.

@@ -8,15 +8,21 @@
 Standalone report exporter: fetches findings from one or more scanners,
 stamps commit/branch/repo metadata, uploads one JSON report per scanner
 to S3/MinIO, plus a "combined" report merging all of them (see
-docs/REPORT_CONTRACT.md) - keyed as:
+docs/REPORT_CONTRACT.md) - keyed twice, once per run under its own
+commit (history) and once overwriting a fixed "latest" pointer:
 
     {bucket}/{repo_full_name}/{branch}/{commit_sha}/{scanner}.json
     {bucket}/{repo_full_name}/{branch}/{commit_sha}/combined.json
+    {bucket}/{repo_full_name}/{branch}/latest/{scanner}.json
+    {bucket}/{repo_full_name}/{branch}/latest/combined.json
 
-Runs before/outside the Temporal agent - the bucket/key it prints
-(the "combined" one) is what `aetherion agent sonar_to_jira` gets
-triggered with; reconciliation needs that full snapshot, not a single
-scanner's slice.
+Runs before/outside the Temporal agent. Deployed org-wide (many repos,
+each exporting on its own schedule), the agent can't be handed a fresh
+commit-scoped key every time - it's triggered with just repo_full_name
++ branch and reads the "latest" pointer above (see
+src/agent/agent.py/fetch_report_from_s3), always the most recent
+combined snapshot for that repo/branch regardless of which commit
+produced it.
 
     ENABLED_SCANNERS=semgrep,trivy \
     S3_ACCESS_KEY_ID=... S3_SECRET_ACCESS_KEY=... S3_BUCKET=reports \
@@ -128,16 +134,25 @@ def build_reports(meta: GitMetadata) -> dict[str, list[dict]]:
     return {**by_scanner, "combined": combined}
 
 
+def latest_prefix(repo_full_name: str | None, branch: str | None) -> str:
+    """The fixed, non-commit-specific prefix the agent reads from - same
+    shape scanner/export.py writes to and src/tools/tools.py reads from."""
+    return f"{repo_full_name or 'unknown-repo'}/{branch or 'unknown-branch'}/latest"
+
+
 def upload_reports(reports: dict[str, list[dict]], meta: GitMetadata) -> tuple[str, dict[str, str]]:
     bucket = os.environ.get("S3_BUCKET", "reports")
-    prefix = f"{meta.repo_full_name or 'unknown-repo'}/{meta.branch or 'unknown-branch'}/{meta.commit_sha or 'unknown-commit'}"
+    history_prefix = f"{meta.repo_full_name or 'unknown-repo'}/{meta.branch or 'unknown-branch'}/{meta.commit_sha or 'unknown-commit'}"
+    latest = latest_prefix(meta.repo_full_name, meta.branch)
     storage = get_storage_client()
 
     keys = {}
     for name, report in reports.items():
-        key = f"{prefix}/{name}.json"
-        storage.upload(bucket, key, json.dumps(report).encode("utf-8"))
-        keys[name] = key
+        body = json.dumps(report).encode("utf-8")
+        history_key = f"{history_prefix}/{name}.json"
+        storage.upload(bucket, history_key, body)
+        storage.upload(bucket, f"{latest}/{name}.json", body)
+        keys[name] = history_key
     return bucket, keys
 
 
