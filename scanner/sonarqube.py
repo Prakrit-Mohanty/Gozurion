@@ -48,6 +48,11 @@ class SonarQubeClient:
         self.base_url = base_url.rstrip("/")
         self.token = token
         self._rule_cache: dict[str, tuple[str, str | None]] = {}
+        # Reused across every call this client makes - a run can hit this
+        # host dozens/hundreds of times (paginated issue search + one rule
+        # lookup per unique rule_key), each otherwise paying for a fresh
+        # TCP/TLS handshake.
+        self.session = requests.Session()
 
     def _auth(self) -> tuple[str, str]:
         return (self.token, "")
@@ -59,7 +64,7 @@ class SonarQubeClient:
         name = rule_key
         how_to_fix = None
         try:
-            response = requests.get(
+            response = self.session.get(
                 f"{self.base_url}/api/rules/show",
                 params={"key": rule_key},
                 auth=self._auth(),
@@ -92,7 +97,7 @@ class SonarQubeClient:
         items: list[dict] = []
         page = 1
         while True:
-            response = requests.get(
+            response = self.session.get(
                 f"{self.base_url}/api/issues/search",
                 params={**params, "p": page, "ps": _PAGE_SIZE},
                 auth=self._auth(),

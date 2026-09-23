@@ -87,6 +87,16 @@ credentials dict itself).
 ticket already labeled `issue-{finding_identity(finding)}`; if none exists,
 `create_ticket(finding)` creates one with that same label stamped on it.
 
+For a whole report at once, `create_jira_tickets` (`src/tools/tools.py`) prefers
+`find_existing_many(findings)` over calling `find_existing` per finding - one
+`labels in (...)` JQL search per ~50 findings instead of one `labels = "..."`
+search per finding. Bonus capability like `attach_screenshot`, detected via
+`getattr` with a per-finding `find_existing` fallback for any `TicketClient` that
+doesn't implement it. `JiraClient` also keeps one `requests.Session` (shared with
+`SprintAssigner`) for every call it makes - dedup search, ticket create, sprint
+add, remote link, screenshot upload - so a run reuses one pooled connection to
+Jira instead of a fresh TCP/TLS handshake per request.
+
 `finding_identity()` (`ticket/base.py`) hashes `repo_full_name + component + line +
 rule_key + finding_type` — deliberately excludes `finding.key`/`finding.branch`, so
 the same bug reported from two different branches (SonarQube scopes its own `key`

@@ -25,6 +25,14 @@ from ticket.jira_sprint import SprintAssigner
 ROLLUP_LABEL = "gozu-backlog-rollup"
 _ROLLUP_DESCRIPTION_MAX_LINES = 50
 
+# find_existing_many() batches the dedup search into "labels in (...)"
+# queries instead of one request per finding. Each label matches at most
+# one issue (finding_identity() is 1:1 with a ticket), so a chunk's total
+# possible matches is bounded by its own size - kept well under Jira's
+# documented page-size cap so a single request per chunk is always
+# complete, no cursor/pagination handling needed.
+_DEDUP_BATCH_SIZE = 50
+
 # Optional custom fields - a Jira admin creates these with these exact
 # names for discover_custom_fields() to find them; otherwise the content
 # stays in Description.
@@ -44,7 +52,12 @@ class JiraClient(TicketClient):
         self.project_key = project_key
         self.auth = (email, api_token)
         self.headers = {"Content-Type": "application/json"}
-        self._sprints = SprintAssigner(self.base_url, self.auth, self.headers, project_key)
+        # One TCP/TLS connection (keep-alive, pooled) reused for every call
+        # this client makes, instead of a fresh handshake per request - a
+        # single run can make dozens of these (one dedup search + one
+        # create + sprint-add + remote-link per finding).
+        self.session = requests.Session()
+        self._sprints = SprintAssigner(self.session, self.base_url, self.auth, self.headers, project_key)
 
     def destination_id(self) -> str:
         return f"jira:{self.base_url}:{self.project_key}"
@@ -59,7 +72,7 @@ class JiraClient(TicketClient):
         raise RuntimeError(f"Jira {action} failed with status {response.status_code}: {response.text}")
 
     def ticket_exists(self, ticket_key: str) -> bool:
-        response = requests.get(
+        response = self.session.get(
             f"{self.base_url}/rest/api/3/issue/{ticket_key}",
             params={"fields": "key"},
             auth=self.auth,
@@ -74,7 +87,7 @@ class JiraClient(TicketClient):
         jql = f'project = {self.project_key} AND labels = "{label}"'
 
         params: dict[str, Any] = {"jql": jql, "fields": "key", "maxResults": 1}
-        response = requests.get(
+        response = self.session.get(
             f"{self.base_url}/rest/api/3/search/jql",
             params=params,
             auth=self.auth,
@@ -88,6 +101,38 @@ class JiraClient(TicketClient):
     def find_existing(self, finding: Finding) -> str | None:
         """Branch-agnostic dedupe - issue-{finding_identity(finding)} is stamped on every ticket at creation."""
         return self._find_by_label(f"issue-{finding_identity(finding)}")
+
+    def _find_by_labels_batch(self, labels: list[str]) -> dict[str, str]:
+        """label -> issue key, for whichever of `labels` already exist - one request per
+        _DEDUP_BATCH_SIZE-sized chunk instead of one per label."""
+        found: dict[str, str] = {}
+        for i in range(0, len(labels), _DEDUP_BATCH_SIZE):
+            chunk = labels[i : i + _DEDUP_BATCH_SIZE]
+            quoted = ", ".join(f'"{label}"' for label in chunk)
+            jql = f"project = {self.project_key} AND labels in ({quoted})"
+
+            response = self.session.get(
+                f"{self.base_url}/rest/api/3/search/jql",
+                params={"jql": jql, "fields": "key,labels", "maxResults": len(chunk)},
+                auth=self.auth,
+                headers=self.headers,
+            )
+            self._raise_for_status(response, "batch search")
+
+            wanted = set(chunk)
+            for issue in response.json().get("issues", []):
+                for label in issue.get("fields", {}).get("labels", []):
+                    if label in wanted:
+                        found[label] = issue["key"]
+        return found
+
+    def find_existing_many(self, findings: list[Finding]) -> dict[str, str]:
+        """finding.key -> existing ticket key, for whichever of `findings` already have one -
+        the batched equivalent of calling find_existing() once per finding. Bonus capability,
+        not part of the TicketClient contract - callers detect it via getattr."""
+        label_to_finding_key = {f"issue-{finding_identity(finding)}": finding.key for finding in findings}
+        found_by_label = self._find_by_labels_batch(list(label_to_finding_key))
+        return {label_to_finding_key[label]: ticket_key for label, ticket_key in found_by_label.items()}
 
     def _map_priority(self, severity: Severity) -> str:
         return SEVERITY_TO_PRIORITY.get(severity, DEFAULT_PRIORITY)
@@ -133,7 +178,7 @@ class JiraClient(TicketClient):
 
     def discover_custom_fields(self, names: list[str]) -> dict[str, str]:
         """name -> "customfield_XXXXX" for whichever of `names` exist in this Jira instance."""
-        response = requests.get(f"{self.base_url}/rest/api/3/field", auth=self.auth, headers=self.headers)
+        response = self.session.get(f"{self.base_url}/rest/api/3/field", auth=self.auth, headers=self.headers)
         self._raise_for_status(response, "list fields")
         wanted = set(names)
         return {field["name"]: field["id"] for field in response.json() if field.get("name") in wanted}
@@ -180,7 +225,7 @@ class JiraClient(TicketClient):
 
     def _create_remote_link(self, issue_key: str, url: str) -> None:
         payload: dict[str, Any] = {"object": {"url": url, "title": "SonarQube finding"}}
-        response = requests.post(
+        response = self.session.post(
             f"{self.base_url}/rest/api/3/issue/{issue_key}/remotelink",
             json=payload,
             auth=self.auth,
@@ -196,7 +241,7 @@ class JiraClient(TicketClient):
         severity_field_id = custom_fields.get(CUSTOM_FIELD_SEVERITY_NAME)
 
         payload = self._build_create_payload(finding, component_field_id, line_field_id, severity_field_id)
-        response = requests.post(
+        response = self.session.post(
             f"{self.base_url}/rest/api/3/issue",
             json=payload,
             auth=self.auth,
@@ -218,7 +263,7 @@ class JiraClient(TicketClient):
                 if severity_field_id in rejected:
                     severity_field_id = None
                 payload = self._build_create_payload(finding, component_field_id, line_field_id, severity_field_id)
-                response = requests.post(
+                response = self.session.post(
                     f"{self.base_url}/rest/api/3/issue",
                     json=payload,
                     auth=self.auth,
@@ -243,7 +288,7 @@ class JiraClient(TicketClient):
 
     def attach_screenshot(self, issue_key: str, image_path: Path) -> None:
         """Skips the upload if a file with the same name is already attached (retry safety)."""
-        get_response = requests.get(
+        get_response = self.session.get(
             f"{self.base_url}/rest/api/3/issue/{issue_key}",
             params={"fields": "attachment"},
             auth=self.auth,
@@ -259,7 +304,7 @@ class JiraClient(TicketClient):
             return
 
         with open(image_path, "rb") as f:
-            response = requests.post(
+            response = self.session.post(
                 f"{self.base_url}/rest/api/3/issue/{issue_key}/attachments",
                 auth=self.auth,
                 headers={"X-Atlassian-Token": "no-check"},
@@ -269,7 +314,7 @@ class JiraClient(TicketClient):
 
     def add_comment(self, ticket_key: str, body: str) -> None:
         payload: dict[str, Any] = {"body": doc(code_block(body))}
-        response = requests.post(
+        response = self.session.post(
             f"{self.base_url}/rest/api/3/issue/{ticket_key}/comment",
             json=payload,
             auth=self.auth,
@@ -278,7 +323,7 @@ class JiraClient(TicketClient):
         self._raise_for_status(response, "add comment")
 
     def get_transitions(self, issue_key: str) -> list[dict[str, Any]]:
-        response = requests.get(
+        response = self.session.get(
             f"{self.base_url}/rest/api/3/issue/{issue_key}/transitions",
             auth=self.auth,
             headers=self.headers,
@@ -291,7 +336,7 @@ class JiraClient(TicketClient):
         for transition in self.get_transitions(issue_key):
             if transition.get("to", {}).get("statusCategory", {}).get("key") != "done":
                 continue
-            response = requests.post(
+            response = self.session.post(
                 f"{self.base_url}/rest/api/3/issue/{issue_key}/transitions",
                 json={"transition": {"id": transition["id"]}},
                 auth=self.auth,
@@ -303,7 +348,7 @@ class JiraClient(TicketClient):
 
     def _update_ticket(self, issue_key: str, summary: str, description: dict) -> None:
         payload = {"fields": {"summary": summary, "description": description}}
-        response = requests.put(
+        response = self.session.put(
             f"{self.base_url}/rest/api/3/issue/{issue_key}",
             json=payload,
             auth=self.auth,
@@ -353,7 +398,7 @@ class JiraClient(TicketClient):
                 "description": description,
             }
         }
-        response = requests.post(
+        response = self.session.post(
             f"{self.base_url}/rest/api/3/issue",
             json=payload,
             auth=self.auth,

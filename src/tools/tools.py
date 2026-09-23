@@ -48,6 +48,22 @@ def _attach_screenshot(ticket_client, ticket_key: str, finding: Finding) -> None
         activity.logger.warning(f"Screenshot attachment failed for {ticket_key}: {e}")
 
 
+def _find_already_ticketed(ticket_client, findings: list[Finding]) -> dict[str, str]:
+    """finding.key -> existing ticket key, for whichever of `findings` already have one.
+    Uses the batched find_existing_many if the client has it (one Jira search per ~50
+    findings instead of one per finding); falls back to find_existing per-finding
+    otherwise, since that's the only part of the TicketClient contract every backend
+    is required to implement."""
+    find_many = getattr(ticket_client, "find_existing_many", None)
+    if find_many is not None:
+        return find_many(findings)
+    return {
+        finding.key: existing
+        for finding in findings
+        if (existing := ticket_client.find_existing(finding)) is not None
+    }
+
+
 @tool()
 async def create_jira_tickets(findings: list[dict], jira_url: str) -> dict:
     """Create Jira tickets for findings that don't already have one (Jira label search, no DB) -
@@ -61,13 +77,14 @@ async def create_jira_tickets(findings: list[dict], jira_url: str) -> dict:
             "jira_project_key": os.environ["JIRA_PROJECT_KEY"],
         }
         ticket_client = build_ticket_client(os.environ.get("TICKET_BACKEND", "jira"), credentials)
+        parsed = [Finding.model_validate(raw) for raw in findings]
+        already_ticketed = _find_already_ticketed(ticket_client, parsed)
+
         created: list[dict] = []
         skipped: list[str] = []
 
-        for raw in findings:
-            finding = Finding.model_validate(raw)
-            existing = ticket_client.find_existing(finding)
-            if existing:
+        for finding in parsed:
+            if finding.key in already_ticketed:
                 skipped.append(finding.key)
                 continue
             ticket_key = ticket_client.create_ticket(finding)

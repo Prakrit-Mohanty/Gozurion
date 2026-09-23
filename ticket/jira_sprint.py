@@ -16,7 +16,8 @@ from temporalio import activity
 class SprintAssigner:
     """Looks up a project's active sprint once per instance, then adds issues to it."""
 
-    def __init__(self, base_url: str, auth: tuple[str, str], headers: dict[str, str], project_key: str):
+    def __init__(self, session: requests.Session, base_url: str, auth: tuple[str, str], headers: dict[str, str], project_key: str):
+        self.session = session
         self.base_url = base_url
         self.auth = auth
         self.headers = headers
@@ -33,7 +34,7 @@ class SprintAssigner:
             return self._active_sprint_id
         self._looked_up = True
 
-        boards_response = requests.get(
+        boards_response = self.session.get(
             f"{self.base_url}/rest/agile/1.0/board",
             params={"projectKeyOrId": self.project_key},
             auth=self.auth,
@@ -47,7 +48,7 @@ class SprintAssigner:
             return None
 
         board_id = boards[0]["id"]
-        sprints_response = requests.get(
+        sprints_response = self.session.get(
             f"{self.base_url}/rest/agile/1.0/board/{board_id}/sprint",
             params={"state": "active"},
             auth=self.auth,
@@ -70,7 +71,7 @@ class SprintAssigner:
         if sprint_id is None:
             return
 
-        response = requests.post(
+        response = self.session.post(
             f"{self.base_url}/rest/agile/1.0/sprint/{sprint_id}/issue",
             json={"issues": [issue_key]},
             auth=self.auth,

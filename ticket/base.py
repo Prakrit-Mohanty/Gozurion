@@ -58,7 +58,8 @@ class TicketClient(ABC):
         Create a ticket, return its key. `custom_fields` is optional and
         backend-specific. Bonus capabilities (attach_screenshot,
         add_comment, transition_to_done, upsert_rollup_ticket,
-        ticket_exists, discover_custom_fields) are NOT part of this
-        contract - callers use getattr(client, name, None) to detect them.
+        ticket_exists, discover_custom_fields, find_existing_many) are NOT
+        part of this contract - callers use getattr(client, name, None) to
+        detect them.
         """
         raise NotImplementedError
