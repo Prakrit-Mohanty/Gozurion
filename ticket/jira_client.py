@@ -86,11 +86,25 @@ def _title_prefix(finding: Finding) -> str:
 
 
 class JiraClient(TicketClient):
-    def __init__(self, base_url: str, email: str, api_token: str, project_key: str):
+    def __init__(self, base_url: str, email: str | None, api_token: str, project_key: str):
         self.base_url = base_url.rstrip("/")
         self.project_key = project_key
-        self.auth = (email, api_token)
-        self.headers = {"Content-Type": "application/json"}
+        # Classic and scoped-but-account-bound API tokens both use Basic
+        # Auth (email, token). A scoped token with no email to pair it with
+        # (e.g. one an org admin hands out that isn't tied to any one
+        # person's account) instead authenticates as a Bearer token in the
+        # header - requests' `auth=` tuple mechanism doesn't apply there,
+        # so self.auth is None and self.auth_headers carries it instead.
+        # Kept separate from self.headers (which also carries Content-Type)
+        # since attach_screenshot's multipart upload needs its own headers
+        # dict without a Content-Type override, but still needs auth merged in.
+        if email:
+            self.auth: tuple[str, str] | None = (email, api_token)
+            self.auth_headers: dict[str, str] = {}
+        else:
+            self.auth = None
+            self.auth_headers = {"Authorization": f"Bearer {api_token}"}
+        self.headers = {"Content-Type": "application/json", **self.auth_headers}
         # One TCP/TLS connection (keep-alive, pooled) reused for every call
         # this client makes, instead of a fresh handshake per request - a
         # single run can make dozens of these (one dedup search + one
@@ -349,7 +363,7 @@ class JiraClient(TicketClient):
             response = self.session.post(
                 f"{self.api_base}/rest/api/3/issue/{issue_key}/attachments",
                 auth=self.auth,
-                headers={"X-Atlassian-Token": "no-check"},
+                headers={**self.auth_headers, "X-Atlassian-Token": "no-check"},
                 files={"file": (image_path.name, f, "image/png")},
             )
         self._raise_for_status(response, "attach screenshot")

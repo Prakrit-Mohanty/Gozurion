@@ -17,7 +17,10 @@ def build_ticket_client(ticket_backend: str, credentials: dict[str, str]) -> Tic
 
     return JiraClient(
         base_url=credentials["jira_url"],
-        email=credentials["jira_email"],
+        # Blank/unset -> Bearer-token auth instead of Basic Auth (see
+        # JiraClient.__init__) - for a token not bound to any one account,
+        # e.g. one an org admin hands out directly.
+        email=credentials.get("jira_email") or None,
         api_token=credentials["jira_api_token"],
         project_key=credentials["jira_project_key"],
     )
@@ -28,7 +31,7 @@ def get_ticket_client() -> TicketClient:
     backend = os.environ.get("TICKET_BACKEND", "jira")
     credentials = {
         "jira_url": os.environ["JIRA_URL"],
-        "jira_email": os.environ["JIRA_EMAIL"],
+        "jira_email": os.environ.get("JIRA_EMAIL", ""),
         "jira_api_token": os.environ["JIRA_API_TOKEN"],
         "jira_project_key": os.environ["JIRA_PROJECT_KEY"],
     }

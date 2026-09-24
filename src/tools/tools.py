@@ -72,7 +72,8 @@ async def create_jira_tickets(findings: list[dict], jira_url: str) -> dict:
     def _create() -> dict:
         credentials = {
             "jira_url": jira_url,
-            "jira_email": os.environ["JIRA_EMAIL"],
+            # Blank -> Bearer-token auth (see JiraClient.__init__/ticket/factory.py).
+            "jira_email": os.environ.get("JIRA_EMAIL", ""),
             "jira_api_token": os.environ["JIRA_API_TOKEN"],
             "jira_project_key": os.environ["JIRA_PROJECT_KEY"],
         }
