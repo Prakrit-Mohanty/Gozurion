@@ -46,6 +46,23 @@ def _normalize_label_value(value: str) -> str:
     return value.strip().lower().replace(" ", "-")
 
 
+def _resolve_api_base(site_url: str) -> str:
+    """Site URL (e.g. https://x.atlassian.net) -> the api.atlassian.com/ex/jira/{cloudId}
+    gateway URL that REST calls actually need to go through. Basic Auth against the plain
+    site URL only works with a classic (unscoped) API token - Atlassian's newer API tokens
+    with scopes ignore that route entirely and 401 with "Client must be authenticated",
+    regardless of how the token/scopes are set up. Routing through the cloud-ID gateway
+    instead works the same way for both token types, so this isn't conditional on which
+    kind of token is in use. /_edge/tenant_info is a public, unauthenticated endpoint."""
+    response = requests.get(f"{site_url}/_edge/tenant_info", timeout=10)
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Couldn't resolve Jira cloud ID from {site_url}/_edge/tenant_info "
+            f"(status {response.status_code}) - is JIRA_URL correct?"
+        )
+    return f"https://api.atlassian.com/ex/jira/{response.json()['cloudId']}"
+
+
 _SCANNER_DISPLAY_NAMES = {
     "semgrep": "Semgrep",
     "trivy": "Trivy",
@@ -79,7 +96,10 @@ class JiraClient(TicketClient):
         # single run can make dozens of these (one dedup search + one
         # create + sprint-add + remote-link per finding).
         self.session = requests.Session()
-        self._sprints = SprintAssigner(self.session, self.base_url, self.auth, self.headers, project_key)
+        # All REST calls go through the cloud-ID gateway, not self.base_url
+        # directly - see _resolve_api_base().
+        self.api_base = _resolve_api_base(self.base_url)
+        self._sprints = SprintAssigner(self.session, self.api_base, self.auth, self.headers, project_key)
 
     def destination_id(self) -> str:
         return f"jira:{self.base_url}:{self.project_key}"
@@ -95,7 +115,7 @@ class JiraClient(TicketClient):
 
     def ticket_exists(self, ticket_key: str) -> bool:
         response = self.session.get(
-            f"{self.base_url}/rest/api/3/issue/{ticket_key}",
+            f"{self.api_base}/rest/api/3/issue/{ticket_key}",
             params={"fields": "key"},
             auth=self.auth,
             headers=self.headers,
@@ -110,7 +130,7 @@ class JiraClient(TicketClient):
 
         params: dict[str, Any] = {"jql": jql, "fields": "key", "maxResults": 1}
         response = self.session.get(
-            f"{self.base_url}/rest/api/3/search/jql",
+            f"{self.api_base}/rest/api/3/search/jql",
             params=params,
             auth=self.auth,
             headers=self.headers,
@@ -134,7 +154,7 @@ class JiraClient(TicketClient):
             jql = f"project = {self.project_key} AND labels in ({quoted})"
 
             response = self.session.get(
-                f"{self.base_url}/rest/api/3/search/jql",
+                f"{self.api_base}/rest/api/3/search/jql",
                 params={"jql": jql, "fields": "key,labels", "maxResults": len(chunk)},
                 auth=self.auth,
                 headers=self.headers,
@@ -200,7 +220,7 @@ class JiraClient(TicketClient):
 
     def discover_custom_fields(self, names: list[str]) -> dict[str, str]:
         """name -> "customfield_XXXXX" for whichever of `names` exist in this Jira instance."""
-        response = self.session.get(f"{self.base_url}/rest/api/3/field", auth=self.auth, headers=self.headers)
+        response = self.session.get(f"{self.api_base}/rest/api/3/field", auth=self.auth, headers=self.headers)
         self._raise_for_status(response, "list fields")
         wanted = set(names)
         return {field["name"]: field["id"] for field in response.json() if field.get("name") in wanted}
@@ -248,7 +268,7 @@ class JiraClient(TicketClient):
     def _create_remote_link(self, issue_key: str, url: str) -> None:
         payload: dict[str, Any] = {"object": {"url": url, "title": "SonarQube finding"}}
         response = self.session.post(
-            f"{self.base_url}/rest/api/3/issue/{issue_key}/remotelink",
+            f"{self.api_base}/rest/api/3/issue/{issue_key}/remotelink",
             json=payload,
             auth=self.auth,
             headers=self.headers,
@@ -264,7 +284,7 @@ class JiraClient(TicketClient):
 
         payload = self._build_create_payload(finding, component_field_id, line_field_id, severity_field_id)
         response = self.session.post(
-            f"{self.base_url}/rest/api/3/issue",
+            f"{self.api_base}/rest/api/3/issue",
             json=payload,
             auth=self.auth,
             headers=self.headers,
@@ -286,7 +306,7 @@ class JiraClient(TicketClient):
                     severity_field_id = None
                 payload = self._build_create_payload(finding, component_field_id, line_field_id, severity_field_id)
                 response = self.session.post(
-                    f"{self.base_url}/rest/api/3/issue",
+                    f"{self.api_base}/rest/api/3/issue",
                     json=payload,
                     auth=self.auth,
                     headers=self.headers,
@@ -311,7 +331,7 @@ class JiraClient(TicketClient):
     def attach_screenshot(self, issue_key: str, image_path: Path) -> None:
         """Skips the upload if a file with the same name is already attached (retry safety)."""
         get_response = self.session.get(
-            f"{self.base_url}/rest/api/3/issue/{issue_key}",
+            f"{self.api_base}/rest/api/3/issue/{issue_key}",
             params={"fields": "attachment"},
             auth=self.auth,
             headers=self.headers,
@@ -327,7 +347,7 @@ class JiraClient(TicketClient):
 
         with open(image_path, "rb") as f:
             response = self.session.post(
-                f"{self.base_url}/rest/api/3/issue/{issue_key}/attachments",
+                f"{self.api_base}/rest/api/3/issue/{issue_key}/attachments",
                 auth=self.auth,
                 headers={"X-Atlassian-Token": "no-check"},
                 files={"file": (image_path.name, f, "image/png")},
@@ -337,7 +357,7 @@ class JiraClient(TicketClient):
     def add_comment(self, ticket_key: str, body: str) -> None:
         payload: dict[str, Any] = {"body": doc(code_block(body))}
         response = self.session.post(
-            f"{self.base_url}/rest/api/3/issue/{ticket_key}/comment",
+            f"{self.api_base}/rest/api/3/issue/{ticket_key}/comment",
             json=payload,
             auth=self.auth,
             headers=self.headers,
@@ -346,7 +366,7 @@ class JiraClient(TicketClient):
 
     def get_transitions(self, issue_key: str) -> list[dict[str, Any]]:
         response = self.session.get(
-            f"{self.base_url}/rest/api/3/issue/{issue_key}/transitions",
+            f"{self.api_base}/rest/api/3/issue/{issue_key}/transitions",
             auth=self.auth,
             headers=self.headers,
         )
@@ -359,7 +379,7 @@ class JiraClient(TicketClient):
             if transition.get("to", {}).get("statusCategory", {}).get("key") != "done":
                 continue
             response = self.session.post(
-                f"{self.base_url}/rest/api/3/issue/{issue_key}/transitions",
+                f"{self.api_base}/rest/api/3/issue/{issue_key}/transitions",
                 json={"transition": {"id": transition["id"]}},
                 auth=self.auth,
                 headers=self.headers,
@@ -371,7 +391,7 @@ class JiraClient(TicketClient):
     def _update_ticket(self, issue_key: str, summary: str, description: dict) -> None:
         payload = {"fields": {"summary": summary, "description": description}}
         response = self.session.put(
-            f"{self.base_url}/rest/api/3/issue/{issue_key}",
+            f"{self.api_base}/rest/api/3/issue/{issue_key}",
             json=payload,
             auth=self.auth,
             headers=self.headers,
@@ -422,7 +442,7 @@ class JiraClient(TicketClient):
             }
         }
         response = self.session.post(
-            f"{self.base_url}/rest/api/3/issue",
+            f"{self.api_base}/rest/api/3/issue",
             json=payload,
             auth=self.auth,
             headers=self.headers,

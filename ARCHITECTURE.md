@@ -80,6 +80,15 @@ run — `fetch_report_from_s3` resolves `repo_full_name`+`branch` to the fixed
 `create_jira_tickets` merges the input `jira_url` with those env values into one
 credentials dict itself).
 
+`jira_url` is the plain site URL (`https://x.atlassian.net`) - `JiraClient.__init__`
+(`ticket/jira_client.py`) resolves it to `https://api.atlassian.com/ex/jira/{cloudId}`
+via the public, unauthenticated `{jira_url}/_edge/tenant_info` and routes every REST
+call through that gateway instead. Required for Atlassian's newer API tokens with
+scopes to work at all - Basic Auth against the plain site URL only works with a
+classic (unscoped) token; scoped tokens 401 ("Client must be authenticated") no
+matter what scopes are granted. The gateway route works the same for both token
+types, so this isn't conditional on which kind is configured.
+
 ## Dedup — a live Jira label search, no database
 
 `create_jira_tickets` is stateless: no Postgres, no ledger, nothing but Jira itself.

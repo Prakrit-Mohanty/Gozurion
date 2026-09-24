@@ -16,9 +16,9 @@ from temporalio import activity
 class SprintAssigner:
     """Looks up a project's active sprint once per instance, then adds issues to it."""
 
-    def __init__(self, session: requests.Session, base_url: str, auth: tuple[str, str], headers: dict[str, str], project_key: str):
+    def __init__(self, session: requests.Session, api_base: str, auth: tuple[str, str], headers: dict[str, str], project_key: str):
         self.session = session
-        self.base_url = base_url
+        self.api_base = api_base
         self.auth = auth
         self.headers = headers
         self.project_key = project_key
@@ -35,7 +35,7 @@ class SprintAssigner:
         self._looked_up = True
 
         boards_response = self.session.get(
-            f"{self.base_url}/rest/agile/1.0/board",
+            f"{self.api_base}/rest/agile/1.0/board",
             params={"projectKeyOrId": self.project_key},
             auth=self.auth,
         )
@@ -49,7 +49,7 @@ class SprintAssigner:
 
         board_id = boards[0]["id"]
         sprints_response = self.session.get(
-            f"{self.base_url}/rest/agile/1.0/board/{board_id}/sprint",
+            f"{self.api_base}/rest/agile/1.0/board/{board_id}/sprint",
             params={"state": "active"},
             auth=self.auth,
         )
@@ -72,7 +72,7 @@ class SprintAssigner:
             return
 
         response = self.session.post(
-            f"{self.base_url}/rest/agile/1.0/sprint/{sprint_id}/issue",
+            f"{self.api_base}/rest/agile/1.0/sprint/{sprint_id}/issue",
             json={"issues": [issue_key]},
             auth=self.auth,
             headers=self.headers,
