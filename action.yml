@@ -1,0 +1,79 @@
+name: "Gozurion Scan & Export"
+description: "Run semgrep/trivy scans and export findings to S3 as a Gozurion-format report for downstream Jira ticket automation."
+author: "Calfus Inc."
+
+branding:
+  icon: "shield"
+  color: "blue"
+
+inputs:
+  enabled_scanners:
+    description: "Comma-separated scanners to run: semgrep, trivy"
+    required: false
+    default: "semgrep,trivy"
+  scan_target:
+    description: "Path to scan, relative to the checked-out repo"
+    required: false
+    default: "."
+  s3_access_key_id:
+    description: "AWS access key ID for the S3 bucket reports are uploaded to"
+    required: true
+  s3_secret_access_key:
+    description: "AWS secret access key for the S3 bucket reports are uploaded to"
+    required: true
+  s3_bucket:
+    description: "S3 bucket name reports are uploaded to"
+    required: true
+  github_token:
+    description: "Token used to look up the repo's default branch via the GitHub API"
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  bucket:
+    description: "S3 bucket the combined report was uploaded to"
+    value: ${{ steps.export.outputs.bucket }}
+  key:
+    description: "S3 key of the combined report"
+    value: ${{ steps.export.outputs.key }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install semgrep
+      if: contains(inputs.enabled_scanners, 'semgrep')
+      shell: bash
+      run: pip install semgrep
+
+    - name: Install trivy
+      if: contains(inputs.enabled_scanners, 'trivy')
+      shell: bash
+      run: |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+          | sh -s -- -b /usr/local/bin
+
+    - name: Install exporter
+      shell: bash
+      # ${{ github.action_path }} is this action's own checkout, pinned to
+      # whatever ref the consumer's `uses:` line resolved to - no separate
+      # clone of Gozurion needed (unlike the workflow_call version, which
+      # runs inside the Gozurion repo's own CI and has to check itself out).
+      run: pip install "${{ github.action_path }}"
+
+    - name: Export report to S3
+      id: export
+      shell: bash
+      env:
+        ENABLED_SCANNERS: ${{ inputs.enabled_scanners }}
+        SCAN_TARGET: ${{ inputs.scan_target }}
+        STORAGE_BACKEND: s3
+        S3_ACCESS_KEY_ID: ${{ inputs.s3_access_key_id }}
+        S3_SECRET_ACCESS_KEY: ${{ inputs.s3_secret_access_key }}
+        S3_BUCKET: ${{ inputs.s3_bucket }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+      run: gozurion-export-report

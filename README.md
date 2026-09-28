@@ -1,5 +1,54 @@
-# sonar_to_jira_agent
+# Gozurion Scan & Export
 
+A GitHub Action that runs [semgrep](https://semgrep.dev/) and/or [Trivy](https://trivy.dev/) against
+your repo and uploads a normalized findings report to S3 (see
+[docs/REPORT_CONTRACT.md](docs/REPORT_CONTRACT.md) for the report shape). Downstream, a separate
+Jira-ticketing agent reads that report and files/reconciles tickets per finding — this action only
+covers the scan-and-export half.
+
+## Usage
+
+```yaml
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Prakrit-Mohanty/Gozurion@v1
+        with:
+          enabled_scanners: semgrep,trivy   # optional, default shown
+          s3_access_key_id: ${{ secrets.S3_ACCESS_KEY_ID }}
+          s3_secret_access_key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          s3_bucket: ${{ secrets.S3_BUCKET }}
+```
+
+### Inputs
+
+| Name                    | Required | Default          | Description                                              |
+| ----------------------- | -------- | ---------------- | ---------------------------------------------------------|
+| `enabled_scanners`      | no       | `semgrep,trivy`   | Comma-separated scanners to run                           |
+| `scan_target`           | no       | `.`               | Path to scan, relative to the checked-out repo            |
+| `s3_access_key_id`      | yes      |                   | AWS access key ID for the S3 bucket                        |
+| `s3_secret_access_key`  | yes      |                   | AWS secret access key for the S3 bucket                   |
+| `s3_bucket`             | yes      |                   | S3 bucket name reports are uploaded to                    |
+| `github_token`          | no       | `${{ github.token }}` | Token used to look up the repo's default branch        |
+
+### Outputs
+
+| Name     | Description                              |
+| -------- | ------------------------------------------|
+| `bucket` | S3 bucket the combined report was uploaded to |
+| `key`    | S3 key of the combined report              |
+
+A single S3 bucket is normally shared across every repo using this action — set the `S3_*` secrets
+at the GitHub org level so each repo inherits them for free instead of copy-pasting per repo.
+
+## Internal / agent development
+
+The rest of this repo also contains the Temporal-based Jira ticketing agent (`src/`, `ticket/`,
+`core/`) built with Calfus's internal `aetherion` SDK. That part isn't used by the Action above and
+isn't published to Marketplace; it's documented here for contributors working on the agent itself.
 
 ### Creating a New Project
 
