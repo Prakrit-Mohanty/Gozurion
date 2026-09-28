@@ -15,7 +15,7 @@ from core.models import Finding
 from scanner.export import latest_prefix
 from storage.factory import get_storage_client
 from ticket.base import finding_identity
-from ticket.factory import build_ticket_client
+from ticket.factory import get_ticket_client
 from ticket.screenshot import build_screenshot
 
 
@@ -32,6 +32,74 @@ async def fetch_report_from_s3(repo_full_name: str, branch: str = "main") -> lis
         return json.loads(get_storage_client().download(bucket, key))
 
     return await asyncio.to_thread(_fetch)
+
+
+# scanner/export.py writes this alongside every combined.json, latest or history -
+# see upload_reports(). Keeping the suffix here instead of importing it from
+# scanner/export.py: that module only exposes the *prefix* builder
+# (latest_prefix), since the exporter itself never needs the "/latest/" segment
+# by itself the way discovery below does.
+_META_SUFFIX = "/latest/meta.json"
+
+
+@tool()
+async def discover_new_reports() -> list[dict]:
+    """Scans the whole bucket for every repo/branch that has ever exported a report, and
+    returns the ones whose latest commit_sha hasn't been recorded as processed yet (see
+    record_processed_commit) - what makes the agent org-wide and zero-config: nothing has
+    to tell it which repos exist, it finds them by listing S3 itself."""
+
+    def _discover() -> list[dict]:
+        bucket = os.environ["S3_BUCKET"]
+        storage = get_storage_client()
+        new_reports: list[dict] = []
+
+        for key in storage.list_keys(bucket):
+            if key.startswith("_state/") or not key.endswith(_META_SUFFIX):
+                continue
+
+            # key shape: {repo_full_name}/{branch}/latest/meta.json - repo_full_name
+            # itself contains one "/" (owner/repo), so peel off the fixed suffix
+            # first and split what's left from the right, not the left.
+            repo_full_name, branch = key[: -len(_META_SUFFIX)].rsplit("/", 1)
+
+            meta = json.loads(storage.download(bucket, key))
+            commit_sha = meta.get("commit_sha")
+            if commit_sha is None:
+                continue
+
+            state_key = _state_key(repo_full_name, branch)
+            last_commit_sha = None
+            if storage.exists(bucket, state_key):
+                last_commit_sha = json.loads(storage.download(bucket, state_key)).get("commit_sha")
+
+            if commit_sha != last_commit_sha:
+                new_reports.append(
+                    {"repo_full_name": repo_full_name, "branch": branch, "commit_sha": commit_sha}
+                )
+
+        return new_reports
+
+    return await asyncio.to_thread(_discover)
+
+
+def _state_key(repo_full_name: str, branch: str) -> str:
+    return f"_state/{repo_full_name}/{branch}.json"
+
+
+@tool()
+async def record_processed_commit(repo_full_name: str, branch: str, commit_sha: str) -> None:
+    """Marks commit_sha as the latest one this agent has already created tickets for, for this
+    repo/branch, so the next run's discover_new_reports skips it. Called only after
+    create_jira_tickets succeeds - a failed run leaves the previous state in place, so the same
+    commit gets retried next time rather than silently skipped."""
+
+    def _record() -> None:
+        bucket = os.environ["S3_BUCKET"]
+        body = json.dumps({"commit_sha": commit_sha}).encode("utf-8")
+        get_storage_client().upload(bucket, _state_key(repo_full_name, branch), body)
+
+    await asyncio.to_thread(_record)
 
 
 def _attach_screenshot(ticket_client, ticket_key: str, finding: Finding) -> None:
@@ -65,19 +133,12 @@ def _find_already_ticketed(ticket_client, findings: list[Finding]) -> dict[str, 
 
 
 @tool()
-async def create_jira_tickets(findings: list[dict], jira_url: str) -> dict:
+async def create_jira_tickets(findings: list[dict]) -> dict:
     """Create Jira tickets for findings that don't already have one (Jira label search, no DB) -
     each new ticket gets a screenshot attached (code snippet, or an info card for line-less findings)."""
 
     def _create() -> dict:
-        credentials = {
-            "jira_url": jira_url,
-            # Blank -> Bearer-token auth (see JiraClient.__init__/ticket/factory.py).
-            "jira_email": os.environ.get("JIRA_EMAIL", ""),
-            "jira_api_token": os.environ["JIRA_API_TOKEN"],
-            "jira_project_key": os.environ["JIRA_PROJECT_KEY"],
-        }
-        ticket_client = build_ticket_client(os.environ.get("TICKET_BACKEND", "jira"), credentials)
+        ticket_client = get_ticket_client()
         parsed = [Finding.model_validate(raw) for raw in findings]
         already_ticketed = _find_already_ticketed(ticket_client, parsed)
 

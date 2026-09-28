@@ -5,6 +5,7 @@
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from storage.base import ReportStorage
 
@@ -34,3 +35,20 @@ class S3Storage(ReportStorage):
 
     def download(self, bucket: str, key: str) -> bytes:
         return self._client.get_object(Bucket=bucket, Key=key)["Body"].read()
+
+    def list_keys(self, bucket: str, prefix: str = "") -> list[str]:
+        paginator = self._client.get_paginator("list_objects_v2")
+        return [
+            obj["Key"]
+            for page in paginator.paginate(Bucket=bucket, Prefix=prefix)
+            for obj in page.get("Contents", [])
+        ]
+
+    def exists(self, bucket: str, key: str) -> bool:
+        try:
+            self._client.head_object(Bucket=bucket, Key=key)
+            return True
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") in ("404", "NoSuchKey"):
+                return False
+            raise

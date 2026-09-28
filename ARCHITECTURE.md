@@ -12,7 +12,7 @@ Any org repo's CI (calls the reusable workflow below)
                           (always overwritten - what the agent reads)
                           |
                           v
-     Temporal agent (this repo): fetch_report_from_s3 -> create_jira_tickets
+     Temporal agent (this repo): discover_new_reports -> fetch_report_from_s3 -> create_jira_tickets
                           |
                           v
                         Jira
@@ -43,8 +43,10 @@ is macOS-arm64-only, so a hard dependency on it would break `pip install .` on t
 workflow's Linux runner.
 
 See `docs/REPORT_CONTRACT.md`/`docs/report-schema.json` for the exact report shape.
-`commit_sha`/`repo_full_name`/`default_branch` are stamped but not currently read by
-the agent — kept for compatibility/future use, not a functional requirement today.
+`commit_sha` and `repo_full_name` are read by the agent (discovery and dedup,
+respectively - see below); `default_branch` is stamped but not currently read by
+anything, kept for possible future use (e.g. only ticketing findings on the default
+branch).
 
 ## Report storage — `storage/`
 
@@ -57,30 +59,43 @@ AWS S3.
 
 ```python
 @agent()
-async def sonar_to_jira(payload: Dict[str, Any]) -> dict:
-    repo_full_name = payload["repo_full_name"]
-    branch = payload.get("branch", "main")
-    jira_url = payload["jira_url"]
-    findings = await toolExecutor.execute("fetch_report_from_s3", repo_full_name, branch)
-    result = await toolExecutor.execute("create_jira_tickets", findings, jira_url)
-    return {"repo_full_name": repo_full_name, "branch": branch, "finding_count": len(findings), **result}
+async def sonar_to_jira(payload: Dict[str, Any] | None = None) -> dict:
+    new_reports = await toolExecutor.execute("discover_new_reports")
+
+    processed = []
+    for report in new_reports:
+        repo_full_name, branch, commit_sha = report["repo_full_name"], report["branch"], report["commit_sha"]
+        findings = await toolExecutor.execute("fetch_report_from_s3", repo_full_name, branch)
+        result = await toolExecutor.execute("create_jira_tickets", findings)
+        await toolExecutor.execute("record_processed_commit", repo_full_name, branch, commit_sha)
+        processed.append({"repo_full_name": repo_full_name, "branch": branch, "commit_sha": commit_sha, "finding_count": len(findings), **result})
+
+    return {"repos_processed": len(processed), "results": processed}
 ```
 
-A thin Temporal *workflow* — no I/O itself, two tool calls, merges the result.
-`bucket` is **not** a trigger input — it comes from the `S3_BUCKET` env var, since
-it's fixed per deployment rather than something that varies per run. `repo_full_name`
-(which repo's report to fetch), `branch` (defaults to `main`), and `jira_url` (which
-Jira instance to create tickets in) are the trigger inputs (`src/agent/metadata.json`).
-Deployed org-wide across many repos, nothing hands the agent a fresh S3 key per
-run — `fetch_report_from_s3` resolves `repo_full_name`+`branch` to the fixed
-`latest/combined.json` pointer `scanner/export.py` overwrites every export (see
-`docs/REPORT_CONTRACT.md`). The rest of the Jira destination
-(`JIRA_EMAIL`/`JIRA_API_TOKEN`/`JIRA_PROJECT_KEY`) still comes from `.env`, via
-`ticket/factory.py`'s `build_ticket_client()` (the pure, env-free constructor —
-`create_jira_tickets` merges the input `jira_url` with those env values into one
-credentials dict itself).
+Zero-config, no trigger inputs at all (`src/agent/metadata.json` declares an empty
+`triggers` list) — the agent finds its own work by listing S3 rather than being told
+which repo/branch to check. `discover_new_reports` (`src/tools/tools.py`) scans the
+whole bucket for every repo/branch that has ever exported a report (via each one's
+`latest/meta.json`, see `docs/REPORT_CONTRACT.md`) and compares its `commit_sha`
+against the last one this agent recorded as processed for that repo/branch
+(`_state/{repo_full_name}/{branch}.json`, also in the same S3 bucket — no database).
+Only repos/branches with a genuinely new commit_sha come back; the agent loops over
+just those, and calls `record_processed_commit` after each one's tickets are created
+so a crash mid-loop leaves that repo's state untouched and it gets retried next run
+rather than silently skipped. This state is purely a "don't bother re-scanning a repo
+with nothing new" skip, not what prevents duplicate tickets — the Jira label search
+below still owns that, so a lost/stale state file costs redundant searches, never a
+duplicate ticket.
 
-`jira_url` is the plain site URL (`https://x.atlassian.net`) - `JiraClient.__init__`
+`bucket` is **not** a trigger input — it comes from the `S3_BUCKET` env var, since
+it's fixed per deployment rather than something that varies per run. The Jira
+destination (`JIRA_URL`/`JIRA_EMAIL`/`JIRA_API_TOKEN`/`JIRA_PROJECT_KEY`) is also one
+fixed value for the whole org, read from `.env` via `ticket/factory.py`'s
+`build_ticket_client()` — not per-run input, so every repo this agent discovers
+files into the same Jira instance/project.
+
+`JIRA_URL` is the plain site URL (`https://x.atlassian.net`) - `JiraClient.__init__`
 (`ticket/jira_client.py`) resolves it to `https://api.atlassian.com/ex/jira/{cloudId}`
 via the public, unauthenticated `{jira_url}/_edge/tenant_info` and routes every REST
 call through that gateway instead. Required for Atlassian's newer API tokens with
@@ -121,10 +136,11 @@ There's deliberately no auto-close/reconciliation step and no per-repo DB-driven
 Jira routing (an earlier iteration explored both via a Postgres ledger and
 per-repo `ticket_destinations`/`repo_configs` tables migrated into the shared
 platform database — reverted: this project doesn't own or manage new tables in that
-shared schema). `TICKET_BACKEND`/`JIRA_EMAIL`/`JIRA_API_TOKEN`/`JIRA_PROJECT_KEY`
-come from `.env`; `jira_url` comes from the trigger input instead, so the same
-deployment can point different runs at different Jira instances without touching
-`.env` per call.
+shared schema). The `_state/` commit-tracking above is the one piece of state this
+project does own, and it's a plain object in the same S3 bucket, not a new table -
+consistent with that same decision. `TICKET_BACKEND`/`JIRA_URL`/`JIRA_EMAIL`/
+`JIRA_API_TOKEN`/`JIRA_PROJECT_KEY` all come from `.env` - one fixed Jira
+destination for every repo this agent discovers.
 
 ## Screenshots — `ticket/screenshot.py`
 
@@ -154,14 +170,14 @@ Temporal's durability.
 
 ## Triggering it
 
-`src/agent/metadata.json` declares `repo_full_name` (required) and `jira_url`
-(required) plus `branch` (optional, defaults to `main`) as string triggers — what
-`aetherion test` turns into a form, and what `aetherion agent sonar_to_jira
-'{"repo_full_name": "...", "branch": "...", "jira_url": "..."}'` expects as payload.
-**Nothing in this repo calls that yet** — the exporter's CI job stops at uploading
-to S3 (see above). Whatever eventually triggers this per repo (the Aetherion
-platform, a schedule, a webhook) only ever needs to know the repo's identity, not
-any report-specific key.
+`src/agent/metadata.json` declares no triggers at all — `aetherion test`/`aetherion
+agent sonar_to_jira` need no payload (an empty `{}` or omitted entirely). Whatever
+triggers a run (a schedule is the expected case, since it discovers its own work
+each time) doesn't need to know which repos exist, let alone pass one in — that's
+the whole point of `discover_new_reports` over the old repo/branch/jira_url trigger
+inputs. **Nothing in this repo calls that yet** — the exporter's CI job stops at
+uploading to S3 (see above); actually scheduling `sonar_to_jira` is the Aetherion
+platform's job once this is published there.
 
 ## How it actually runs (execution mechanics)
 
@@ -179,28 +195,28 @@ what's on each side of it.
   (both set in `.env`). Has to already be running before anything below can happen —
   it's what holds the `sonar_to_jira` workflow code and the two tool functions in
   memory.
-- **`aetherion agent sonar_to_jira '{"repo_full_name": ..., "jira_url": ...}'`** — a short-lived CLI invocation, a
-  Temporal *client* asking the server to start a new workflow execution, then (by
-  default, `--wait`) blocking on the result.
+- **`aetherion agent sonar_to_jira`** — a short-lived CLI invocation (no payload
+  needed), a Temporal *client* asking the server to start a new workflow execution,
+  then (by default, `--wait`) blocking on the result.
 
 **A single run, traced through:**
 
-1. The CLI call lands on Temporal server as "start `sonar_to_jira` with this payload,
-   on the agent task queue." Recorded in a new execution's event history, marked
-   available for a worker to pick up.
+1. The CLI call lands on Temporal server as "start `sonar_to_jira`, on the agent
+   task queue." Recorded in a new execution's event history, marked available for a
+   worker to pick up.
 2. The workflow worker polls that queue, gets the task, starts executing
    `sonar_to_jira`'s Python code inside Temporal's deterministic workflow sandbox —
    what makes replay (below) possible.
-3. Execution reaches `await toolExecutor.execute("fetch_report_from_s3", repo_full_name, branch)`. This
-   does **not** call the Python function directly — it asks Temporal server to
-   schedule an *activity task* on the tool task queue, and the workflow suspends
-   right there.
+3. Execution reaches `await toolExecutor.execute("discover_new_reports")`. This does
+   **not** call the Python function directly — it asks Temporal server to schedule
+   an *activity task* on the tool task queue, and the workflow suspends right there.
 4. The activity worker polls the tool task queue, picks up the task, runs the actual
-   `fetch_report_from_s3` function — the only point where real I/O happens (the S3
-   call). Reports the result back to Temporal server.
+   `discover_new_reports` function — the only point where real I/O happens (the S3
+   listing). Reports the result back to Temporal server.
 5. Temporal appends that result to the event history and redelivers it to the
-   suspended workflow, which resumes with `findings` populated. Steps 3-5 repeat for
-   `create_jira_tickets`.
+   suspended workflow, which resumes with `new_reports` populated. Steps 3-5 repeat
+   for `fetch_report_from_s3`, `create_jira_tickets`, and `record_processed_commit`,
+   once per discovered repo/branch.
 6. The workflow returns its final dict. Temporal marks the execution complete and
    hands the return value to the blocked `aetherion agent` CLI call.
 

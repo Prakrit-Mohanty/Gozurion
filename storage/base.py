@@ -14,3 +14,13 @@ class ReportStorage(ABC):
     @abstractmethod
     def download(self, bucket: str, key: str) -> bytes:
         raise NotImplementedError
+
+    @abstractmethod
+    def list_keys(self, bucket: str, prefix: str = "") -> list[str]:
+        """Every key under `prefix` - used for multi-repo discovery (src/tools/tools.py's
+        discover_new_reports), not just single-key fetches."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def exists(self, bucket: str, key: str) -> bool:
+        raise NotImplementedError

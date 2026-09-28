@@ -153,6 +153,15 @@ def upload_reports(reports: dict[str, list[dict]], meta: GitMetadata) -> tuple[s
         storage.upload(bucket, history_key, body)
         storage.upload(bucket, f"{latest}/{name}.json", body)
         keys[name] = history_key
+
+    # Written even when a report has zero findings - the agent's multi-repo
+    # discovery (src/tools/tools.py's discover_new_reports) needs commit_sha
+    # to detect "is there a new report for this repo/branch" without
+    # depending on combined.json containing anything to read it off of.
+    meta_body = json.dumps(meta.model_dump(mode="json")).encode("utf-8")
+    storage.upload(bucket, f"{history_prefix}/meta.json", meta_body)
+    storage.upload(bucket, f"{latest}/meta.json", meta_body)
+
     return bucket, keys
 
 

@@ -1,31 +1,8 @@
 {
     "name": "sonar_to_jira_agent",
     "version": "1.0.0",
-    "description": "Pulls the latest combined findings report for a repo/branch from S3 and creates Jira tickets.",
+    "description": "Scans S3 for every repo/branch with a new scan report and creates Jira tickets for it - zero-config, no per-run inputs.",
     "config": {
-        "triggers": [
-            {
-              "name": "repo_full_name",
-              "type": "str",
-              "required": true,
-              "description": "GitHub repo to fetch the latest report for, as '{owner}/{repo}' - matches what scanner/export.py stamped on the report",
-              "friendly_name": "Repository"
-            },
-            {
-              "name": "branch",
-              "type": "str",
-              "required": false,
-              "default": "main",
-              "description": "Branch to fetch the latest report for (defaults to 'main')",
-              "friendly_name": "Branch"
-            },
-            {
-              "name": "jira_url",
-              "type": "str",
-              "required": true,
-              "description": "Jira base URL to create tickets in (e.g. https://yourcompany.atlassian.net)",
-              "friendly_name": "Jira URL"
-            }
-        ]
+        "triggers": []
     }
 }

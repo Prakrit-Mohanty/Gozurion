@@ -8,18 +8,36 @@ from aetherion_sdk import agent, toolExecutor
 
 
 @agent()
-async def sonar_to_jira(payload: Dict[str, Any]) -> dict:
-    """Agent that:
-    - Pulls the latest combined findings report (JSON) for a repo/branch from S3
-      (bucket from env; key resolved from repo_full_name+branch - see fetch_report_from_s3)
-    - Creates Jira tickets for any findings that don't already have one
+async def sonar_to_jira(payload: Dict[str, Any] | None = None) -> dict:
+    """Zero-config, org-wide agent - no repo/branch/Jira instance to pass in:
+    - Lists every repo/branch in S3 with a report whose commit_sha hasn't been
+      processed yet (discover_new_reports)
+    - For each one, pulls its latest combined findings report and creates Jira
+      tickets for any that don't already have one
+    - Records that commit_sha as processed, so the next run only picks up repos
+      that have actually exported something new since
     """
 
-    repo_full_name = payload["repo_full_name"]
-    branch = payload.get("branch", "main")
-    jira_url = payload["jira_url"]
+    new_reports = await toolExecutor.execute("discover_new_reports")
 
-    findings = await toolExecutor.execute("fetch_report_from_s3", repo_full_name, branch)
-    result = await toolExecutor.execute("create_jira_tickets", findings, jira_url)
+    processed = []
+    for report in new_reports:
+        repo_full_name = report["repo_full_name"]
+        branch = report["branch"]
+        commit_sha = report["commit_sha"]
 
-    return {"repo_full_name": repo_full_name, "branch": branch, "finding_count": len(findings), **result}
+        findings = await toolExecutor.execute("fetch_report_from_s3", repo_full_name, branch)
+        result = await toolExecutor.execute("create_jira_tickets", findings)
+        await toolExecutor.execute("record_processed_commit", repo_full_name, branch, commit_sha)
+
+        processed.append(
+            {
+                "repo_full_name": repo_full_name,
+                "branch": branch,
+                "commit_sha": commit_sha,
+                "finding_count": len(findings),
+                **result,
+            }
+        )
+
+    return {"repos_processed": len(processed), "results": processed}
