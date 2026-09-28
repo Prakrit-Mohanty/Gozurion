@@ -43,17 +43,30 @@ _META_SUFFIX = "/latest/meta.json"
 
 
 @tool()
-async def discover_new_reports() -> list[dict]:
-    """Scans the whole bucket for every repo/branch that has ever exported a report, and
-    returns the ones whose latest commit_sha hasn't been recorded as processed yet (see
-    record_processed_commit) - what makes the agent org-wide and zero-config: nothing has
-    to tell it which repos exist, it finds them by listing S3 itself."""
+async def discover_new_reports(
+    repo_full_name: str | None = None, branch: str | None = None
+) -> list[dict]:
+    """Returns every repo/branch whose latest commit_sha hasn't been recorded as processed yet
+    (see record_processed_commit).
+
+    With no arguments, scans the whole bucket for every repo/branch that has ever exported a
+    report - what makes the agent org-wide and zero-config: nothing has to tell it which repos
+    exist, it finds them by listing S3 itself. With repo_full_name (+ branch, default "main"),
+    checks only that one repo/branch's meta.json instead - the path a CI-triggered run takes
+    right after its own upload, so it never picks up (and races over) other repos' reports."""
 
     def _discover() -> list[dict]:
         bucket = os.environ["S3_BUCKET"]
         storage = get_storage_client()
-        new_reports: list[dict] = []
 
+        if repo_full_name is not None:
+            key = f"{latest_prefix(repo_full_name, branch or 'main')}/meta.json"
+            if not storage.exists(bucket, key):
+                raise FileNotFoundError(f"No report at s3://{bucket}/{key}")
+            new = _new_report(storage, bucket, key, repo_full_name, branch or "main")
+            return [new] if new else []
+
+        new_reports: list[dict] = []
         for key in storage.list_keys(bucket):
             if key.startswith("_state/") or not key.endswith(_META_SUFFIX):
                 continue
@@ -61,26 +74,32 @@ async def discover_new_reports() -> list[dict]:
             # key shape: {repo_full_name}/{branch}/latest/meta.json - repo_full_name
             # itself contains one "/" (owner/repo), so peel off the fixed suffix
             # first and split what's left from the right, not the left.
-            repo_full_name, branch = key[: -len(_META_SUFFIX)].rsplit("/", 1)
-
-            meta = json.loads(storage.download(bucket, key))
-            commit_sha = meta.get("commit_sha")
-            if commit_sha is None:
-                continue
-
-            state_key = _state_key(repo_full_name, branch)
-            last_commit_sha = None
-            if storage.exists(bucket, state_key):
-                last_commit_sha = json.loads(storage.download(bucket, state_key)).get("commit_sha")
-
-            if commit_sha != last_commit_sha:
-                new_reports.append(
-                    {"repo_full_name": repo_full_name, "branch": branch, "commit_sha": commit_sha}
-                )
+            found_repo, found_branch = key[: -len(_META_SUFFIX)].rsplit("/", 1)
+            if new := _new_report(storage, bucket, key, found_repo, found_branch):
+                new_reports.append(new)
 
         return new_reports
 
     return await asyncio.to_thread(_discover)
+
+
+def _new_report(
+    storage, bucket: str, meta_key: str, repo_full_name: str, branch: str
+) -> dict | None:
+    """The discover_new_reports entry for one repo/branch, or None if its latest commit_sha is
+    missing or already recorded as processed."""
+    commit_sha = json.loads(storage.download(bucket, meta_key)).get("commit_sha")
+    if commit_sha is None:
+        return None
+
+    state_key = _state_key(repo_full_name, branch)
+    last_commit_sha = None
+    if storage.exists(bucket, state_key):
+        last_commit_sha = json.loads(storage.download(bucket, state_key)).get("commit_sha")
+
+    if commit_sha == last_commit_sha:
+        return None
+    return {"repo_full_name": repo_full_name, "branch": branch, "commit_sha": commit_sha}
 
 
 def _state_key(repo_full_name: str, branch: str) -> str:

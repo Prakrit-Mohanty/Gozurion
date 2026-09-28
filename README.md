@@ -21,6 +21,10 @@ jobs:
           s3_access_key_id: ${{ secrets.S3_ACCESS_KEY_ID }}
           s3_secret_access_key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
           s3_bucket: ${{ secrets.S3_BUCKET }}
+          # optional - start the Jira agent for this repo/branch after the upload
+          aetherion_client_id: ${{ secrets.AETHERION_CLIENT_ID }}
+          aetherion_client_secret: ${{ secrets.AETHERION_CLIENT_SECRET }}
+          aetherion_task_queue: ${{ secrets.AETHERION_TASK_QUEUE }}
 ```
 
 ### Inputs
@@ -33,6 +37,9 @@ jobs:
 | `s3_secret_access_key`  | yes      |                   | AWS secret access key for the S3 bucket                   |
 | `s3_bucket`             | yes      |                   | S3 bucket name reports are uploaded to                    |
 | `github_token`          | no       | `${{ github.token }}` | Token used to look up the repo's default branch        |
+| `aetherion_client_id`   | no       |                   | Aetherion service-account client ID - if set, starts the Jira agent for this repo/branch after the upload |
+| `aetherion_client_secret` | with client ID |           | Aetherion service-account client secret                   |
+| `aetherion_task_queue`  | with client ID |             | Task queue of the published `sonar_to_jira` agent         |
 
 ### Outputs
 
@@ -41,8 +48,8 @@ jobs:
 | `bucket` | S3 bucket the combined report was uploaded to |
 | `key`    | S3 key of the combined report              |
 
-A single S3 bucket is normally shared across every repo using this action — set the `S3_*` secrets
-at the GitHub org level so each repo inherits them for free instead of copy-pasting per repo.
+A single S3 bucket is normally shared across every repo using this action — set the `S3_*` (and
+`AETHERION_*`) secrets at the GitHub org level so each repo inherits them for free instead of copy-pasting per repo.
 
 ## Internal / agent development
 

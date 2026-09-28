@@ -9,16 +9,20 @@ from aetherion_sdk import agent, toolExecutor
 
 @agent()
 async def sonar_to_jira(payload: Dict[str, Any] | None = None) -> dict:
-    """Zero-config, org-wide agent - no repo/branch/Jira instance to pass in:
-    - Lists every repo/branch in S3 with a report whose commit_sha hasn't been
-      processed yet (discover_new_reports)
-    - For each one, pulls its latest combined findings report and creates Jira
-      tickets for any that don't already have one
-    - Records that commit_sha as processed, so the next run only picks up repos
-      that have actually exported something new since
+    """Org-wide agent, two ways to run it:
+    - Empty payload (schedule / manual): lists every repo/branch in S3 with a
+      report whose commit_sha hasn't been processed yet (discover_new_reports)
+    - {"repo_full_name": ..., "branch": ...} (CI, right after its own upload -
+      scripts/trigger-agent.sh): checks only that one repo/branch
+    Either way, for each new report: pulls its latest combined findings, creates
+    Jira tickets for any that don't already have one, then records that
+    commit_sha as processed so the next run skips it.
     """
 
-    new_reports = await toolExecutor.execute("discover_new_reports")
+    payload = payload or {}
+    new_reports = await toolExecutor.execute(
+        "discover_new_reports", payload.get("repo_full_name"), payload.get("branch")
+    )
 
     processed = []
     for report in new_reports:

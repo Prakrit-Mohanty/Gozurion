@@ -1,8 +1,23 @@
 {
     "name": "sonar_to_jira_agent",
     "version": "1.0.0",
-    "description": "Scans S3 for every repo/branch with a new scan report and creates Jira tickets for it - zero-config, no per-run inputs.",
+    "description": "Creates Jira tickets for new scan reports in S3 - for one repo/branch if given (the CI trigger), otherwise for every repo/branch with a new report.",
     "config": {
-        "triggers": []
+        "triggers": [
+            {
+              "name": "repo_full_name",
+              "type": "str",
+              "required": false,
+              "description": "Only process this repo's report, as '{owner}/{repo}' - leave empty to scan every repo in S3",
+              "friendly_name": "Repository"
+            },
+            {
+              "name": "branch",
+              "type": "str",
+              "required": false,
+              "description": "Branch of repo_full_name to process (defaults to 'main'; ignored without a repository)",
+              "friendly_name": "Branch"
+            }
+        ]
     }
 }

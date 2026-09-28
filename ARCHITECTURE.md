@@ -20,9 +20,10 @@ Any org repo's CI (calls the reusable workflow below)
 
 The exporter (`scanner/`) and the Temporal agent (`src/agent/`, `src/tools/`) both
 live in this repo. `.github/workflows/export-sonar-report.yml` is a reusable workflow
-any repo in the org calls. **It stops at uploading the report to S3.** It does not
-trigger the agent — actually invoking the agent per new report is the Aetherion
-platform's job once this is published there, not this repo's CI.
+any repo in the org calls (`action.yml` is the same thing as a composite action). After
+uploading the report to S3 it starts the agent for just that repo/branch
+(`scripts/trigger-agent.sh`) — if the `AETHERION_*` credentials are set; without them
+it stops at the upload. See "Triggering it" below.
 
 ## The exporter — `scanner/`
 
@@ -60,7 +61,10 @@ AWS S3.
 ```python
 @agent()
 async def sonar_to_jira(payload: Dict[str, Any] | None = None) -> dict:
-    new_reports = await toolExecutor.execute("discover_new_reports")
+    payload = payload or {}
+    new_reports = await toolExecutor.execute(
+        "discover_new_reports", payload.get("repo_full_name"), payload.get("branch")
+    )
 
     processed = []
     for report in new_reports:
@@ -73,9 +77,10 @@ async def sonar_to_jira(payload: Dict[str, Any] | None = None) -> dict:
     return {"repos_processed": len(processed), "results": processed}
 ```
 
-Zero-config, no trigger inputs at all (`src/agent/metadata.json` declares an empty
-`triggers` list) — the agent finds its own work by listing S3 rather than being told
-which repo/branch to check. `discover_new_reports` (`src/tools/tools.py`) scans the
+Two optional trigger inputs, `repo_full_name` and `branch` (default `main`). Given a
+repo, `discover_new_reports` (`src/tools/tools.py`) checks only that one repo/branch —
+what the CI trigger passes. With an empty payload the agent finds its own work by
+listing S3 rather than being told which repo/branch to check: it scans the
 whole bucket for every repo/branch that has ever exported a report (via each one's
 `latest/meta.json`, see `docs/REPORT_CONTRACT.md`) and compares its `commit_sha`
 against the last one this agent recorded as processed for that repo/branch
@@ -170,14 +175,28 @@ Temporal's durability.
 
 ## Triggering it
 
-`src/agent/metadata.json` declares no triggers at all — `aetherion test`/`aetherion
-agent sonar_to_jira` need no payload (an empty `{}` or omitted entirely). Whatever
-triggers a run (a schedule is the expected case, since it discovers its own work
-each time) doesn't need to know which repos exist, let alone pass one in — that's
-the whole point of `discover_new_reports` over the old repo/branch/jira_url trigger
-inputs. **Nothing in this repo calls that yet** — the exporter's CI job stops at
-uploading to S3 (see above); actually scheduling `sonar_to_jira` is the Aetherion
-platform's job once this is published there.
+Two ways, both the same `sonar_to_jira` agent:
+
+- **From CI, per repo/branch.** The last step of `action.yml` /
+  `export-sonar-report.yml` runs `scripts/trigger-agent.sh`: it gets a token for an
+  Aetherion service account (Keycloak client-credentials, `AETHERION_CLIENT_ID` /
+  `AETHERION_CLIENT_SECRET`) and starts `sonar_to_jira` with
+  `{"repo_full_name", "branch"}` on the published agent's task queue
+  (`AETHERION_TASK_QUEUE`). It uses the `temporal` CLI rather than `aetherion agent`
+  because the aetherion SDK only ships a macOS arm64 wheel. N repos pushing at once
+  means N independent runs in parallel, each reading only its own report. The
+  workflow ID is fixed per repo/branch (`sonar_to_jira-{repo}-{branch}`) with
+  `--id-conflict-policy UseExisting`, so two pushes to the *same* branch attach to one
+  run instead of racing each other on the Jira dedup search (search-then-create isn't
+  atomic, so two concurrent runs over the same findings would both create tickets).
+  A push that lands while its branch's run is still in flight isn't lost: its new
+  commit_sha stays unrecorded, so the next run for that branch — or the next sweep —
+  picks it up.
+- **Empty payload — a sweep.** `aetherion test` with the form left blank, `aetherion
+  agent sonar_to_jira '{}'`, or a schedule: processes every repo/branch in S3 with a
+  new commit_sha. Useful as a nightly safety net for anything the CI trigger missed.
+  A sweep running at the same moment as a CI run for the same repo can still race
+  it, so schedule it for a quiet hour.
 
 ## How it actually runs (execution mechanics)
 

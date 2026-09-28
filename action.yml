@@ -28,6 +28,18 @@ inputs:
     description: "Token used to look up the repo's default branch via the GitHub API"
     required: false
     default: ${{ github.token }}
+  aetherion_client_id:
+    description: "Aetherion service-account client ID - if set, starts the Jira agent for this repo/branch after the upload. Leave empty to only upload."
+    required: false
+    default: ""
+  aetherion_client_secret:
+    description: "Aetherion service-account client secret (required with aetherion_client_id)"
+    required: false
+    default: ""
+  aetherion_task_queue:
+    description: "Task queue of the published sonar_to_jira agent (required with aetherion_client_id)"
+    required: false
+    default: ""
 
 outputs:
   bucket:
@@ -77,3 +89,11 @@ runs:
         S3_BUCKET: ${{ inputs.s3_bucket }}
         GITHUB_TOKEN: ${{ inputs.github_token }}
       run: gozurion-export-report
+
+    - name: Trigger Jira agent
+      shell: bash
+      env:
+        AETHERION_CLIENT_ID: ${{ inputs.aetherion_client_id }}
+        AETHERION_CLIENT_SECRET: ${{ inputs.aetherion_client_secret }}
+        AETHERION_TASK_QUEUE: ${{ inputs.aetherion_task_queue }}
+      run: "${{ github.action_path }}/scripts/trigger-agent.sh"
