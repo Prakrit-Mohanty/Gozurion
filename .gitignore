@@ -51,3 +51,7 @@ Thumbs.db
 
 # Docker volume data
 volumes/
+
+# Local scanner-run artifacts
+.scannerwork/
+comres.json
