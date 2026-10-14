@@ -55,3 +55,4 @@ volumes/
 # Local scanner-run artifacts
 .scannerwork/
 comres.json
+lambda/trigger_agent/trigger_agent.zip
