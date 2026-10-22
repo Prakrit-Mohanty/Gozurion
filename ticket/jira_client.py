@@ -12,7 +12,7 @@ from temporalio import activity
 
 from core.errors import TicketAuthError, TicketValidationError
 from core.models import Finding, Severity
-from ticket.adf import bullet_list, code_block, doc, paragraph
+from ticket.adf import bullet_list, code_block, doc, expand, heading, paragraph, summarize
 from ticket.base import (
     DEFAULT_PRIORITY,
     SEVERITY_TO_PRIORITY,
@@ -215,9 +215,11 @@ class JiraClient(TicketClient):
     ) -> dict:
         """`*_moved` means that value is set as a real custom field instead, so it's dropped here to avoid duplication."""
         details = []
+        if finding.repo_full_name:
+            details.append(f"Repository: {finding.repo_full_name}")
         if not component_moved:
             details.append(f"Component: {finding.component}")
-        if not line_moved:
+        if finding.line is not None and not line_moved:
             details.append(f"Line: {finding.line}")
         details.append(f"Type: {finding.finding_type}")
         if not severity_moved:
@@ -226,10 +228,19 @@ class JiraClient(TicketClient):
             f"Source: {finding.source_tool}",
             f"Branch: {finding.branch or 'unknown'}",
         ]
-        content = [paragraph(finding.llm_explanation or finding.message), bullet_list(details)]
+        if finding.commit_sha:
+            details.append(f"Commit: {finding.commit_sha[:10]}")
+        short, full = summarize(finding.llm_explanation or finding.message)
+        content = [paragraph(short)]
+        if full:
+            content.append(expand("Full description", paragraph(full[:10000])))
+        content += [heading("Details"), bullet_list(details)]
         if finding.how_to_fix:
-            content.append(paragraph("How to fix:"))
-            content.append(code_block(finding.how_to_fix))
+            fix = finding.how_to_fix
+            if "\n" not in fix and len(fix) <= 160:
+                content += [heading("Recommended action"), paragraph(fix)]
+            else:
+                content += [heading("How to fix"), code_block(fix[:10000])]
         return doc(*content)
 
     def discover_custom_fields(self, names: list[str]) -> dict[str, str]:
