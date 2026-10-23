@@ -77,12 +77,12 @@ def _scanner_label(source_tool: str) -> str:
 
 
 def _title_prefix(finding: Finding) -> str:
-    """"Semgrep [org/repo]: " - deployed org-wide with every repo's tickets landing in
+    """"Semgrep | org/repo | " - deployed org-wide with every repo's tickets landing in
     one Jira project (see finding_identity()), both which scanner and which repo need
     to be visible without opening the ticket. Omits the repo bracket if unset (e.g. a
     manual local run scanner/git_context.py couldn't stamp)."""
     scanner = _scanner_label(finding.source_tool)
-    return f"{scanner} [{finding.repo_full_name}]: " if finding.repo_full_name else f"{scanner}: "
+    return f"{scanner} | {finding.repo_full_name} | " if finding.repo_full_name else f"{scanner} | "
 
 
 class JiraClient(TicketClient):

@@ -8,6 +8,7 @@ secrets, and misconfigurations, all from one filesystem scan. No server,
 no API token.
 """
 
+import re
 import json
 import logging
 import subprocess
@@ -27,6 +28,20 @@ DEFAULT_SEVERITY = Severity.MEDIUM
 _TIMEOUT_SECONDS = 900
 
 
+def _readable_title(vulnerability_id: str, pkg_name: str, title: str | None) -> str:
+    """"CVE-2026-1234 | pillow | Denial of Service ..." - Trivy's own titles often start with a repeated "pkg: " prefix, which is stripped so the package only shows once."""
+    text = title or ""
+    while True:
+        stripped = re.sub(rf"^{re.escape(pkg_name)}\s*:\s*", "", text, flags=re.IGNORECASE)
+        if stripped == text:
+            break
+        text = stripped
+    parts = [vulnerability_id, pkg_name]
+    if text and text != vulnerability_id:
+        parts.append(text)
+    return " | ".join(parts)
+
+
 class TrivyClient:
     def __init__(self, severities: str = "CRITICAL,HIGH,MEDIUM"):
         self.severities = severities
@@ -43,7 +58,7 @@ class TrivyClient:
         fixed_version = vuln.get("FixedVersion")
         return Finding(
             key=f"trivy:{vuln_id}:{pkg}:{target}",
-            title=f"{vuln_id} in {pkg} ({target})",
+            title=_readable_title(vuln_id, pkg, vuln.get("Title")),
             severity=self._map_severity(vuln.get("Severity")),
             component=target,
             line=None,
