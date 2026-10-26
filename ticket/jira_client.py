@@ -222,6 +222,8 @@ class JiraClient(TicketClient):
         if finding.line is not None and not line_moved:
             details.append(f"Line: {finding.line}")
         details.append(f"Type: {finding.finding_type}")
+        if finding.rule_key:
+            details.append(f"Rule: {finding.rule_key}")
         if not severity_moved:
             details.append(f"Severity: {finding.severity.value}")
         details += [
