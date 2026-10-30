@@ -19,15 +19,25 @@ from ticket.factory import get_ticket_client
 from ticket.screenshot import build_screenshot
 
 
+def _bucket() -> str:
+    """The tenant's reports bucket. On an Aetherion worker the platform sets TENANT_ID, which is
+    the bucket name itself. S3_BUCKET is the fallback for running the agent locally, where no
+    tenant is set."""
+    bucket = os.getenv("TENANT_ID") or os.getenv("S3_BUCKET")
+    if not bucket:
+        raise RuntimeError("Neither TENANT_ID nor S3_BUCKET is set - no reports bucket to read")
+    return bucket
+
+
 @tool()
 async def fetch_report_from_s3(repo_full_name: str, branch: str = "main") -> list[dict]:
     """Download the latest combined findings report (JSON list of Finding dicts) for a repo/branch -
-    bucket comes from S3_BUCKET. Reads the fixed "latest" pointer scanner/export.py overwrites every
+    bucket comes from _bucket(). Reads the fixed "latest" pointer scanner/export.py overwrites every
     run, not a commit-specific key - deployed org-wide, the agent is only ever told which repo/branch
     to check, never a fresh key per run."""
 
     def _fetch() -> list[dict]:
-        bucket = os.environ["S3_BUCKET"]
+        bucket = _bucket()
         key = f"{latest_prefix(repo_full_name, branch)}/combined.json"
         return json.loads(get_storage_client().download(bucket, key))
 
@@ -56,7 +66,7 @@ async def discover_new_reports(
     right after its own upload, so it never picks up (and races over) other repos' reports."""
 
     def _discover() -> list[dict]:
-        bucket = os.environ["S3_BUCKET"]
+        bucket = _bucket()
         storage = get_storage_client()
 
         if repo_full_name is not None:
@@ -114,7 +124,7 @@ async def record_processed_commit(repo_full_name: str, branch: str, commit_sha: 
     commit gets retried next time rather than silently skipped."""
 
     def _record() -> None:
-        bucket = os.environ["S3_BUCKET"]
+        bucket = _bucket()
         body = json.dumps({"commit_sha": commit_sha}).encode("utf-8")
         get_storage_client().upload(bucket, _state_key(repo_full_name, branch), body)
 
