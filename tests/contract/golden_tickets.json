@@ -17,7 +17,7 @@
         "commit": "abc1234567"
       },
       "expected": {
-        "title": "[acme/app] backend/app.py:5 - Use of eval()",
+        "title": "app | app.py | 5 | Use of eval()",
         "priority": "Medium",
         "labels": [
           "issue-b741a67454933b0e85d8",
@@ -53,7 +53,7 @@
         "commit": "def4567890"
       },
       "expected": {
-        "title": "[acme/app] requirements.txt - CVE-2018-1000656: flask denial of service",
+        "title": "app | requirements.txt | CVE-2018-1000656: flask denial of service",
         "priority": "High",
         "labels": [
           "issue-5b98b432ffdec5e4b74f",
@@ -88,7 +88,7 @@
         "commit": "0123456789"
       },
       "expected": {
-        "title": "[acme/app] .../legend/LegendItemWithTooltip.tsx:120 - React dangerouslySetInnerHTML with a value that is not a constant",
+        "title": "app | LegendItemWithTooltip.tsx | 120 | React dangerouslySetInnerHTML with a value that is not a constant",
         "priority": "Medium",
         "labels": [
           "issue-be194dbd982461ad37ca",
@@ -124,7 +124,7 @@
         "commit": "aaaaaaaaaa"
       },
       "expected": {
-        "title": "[acme/app] src/app.py:7 - Detected a string concatenation with a non-literal variable in a util.format function so an...",
+        "title": "app | app.py | 7 | Detected a string concatenation with a non-literal variable in a util.format function so an attack...",
         "priority": "Low",
         "labels": [
           "issue-a83936563fb6301ab9d9",

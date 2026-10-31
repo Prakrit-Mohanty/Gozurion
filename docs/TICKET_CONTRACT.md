@@ -11,13 +11,13 @@ A ticket needs a repository and a branch. A tool that cannot find them stops bef
 ### Title
 
 ```
-[owner/repo] path/to/file.py:42 - Rule title
+repo | file.py | 42 | Rule title
 ```
 
+- The repo is the name without the owner. The file is the last part of the path. The Details list has the full repository and path.
 - The title is at most 120 characters.
-- A finding with no line has no `:42` (for example a package finding in `requirements.txt`).
-- If the title is too long, the path loses its leading folders and keeps its last two parts: `.../folder/file.py`.
-- If it is still too long, the rule title is cut and ends with `...`.
+- A finding with no line has no line part (for example a package finding in `requirements.txt`).
+- If the title is too long, the rule title is cut and ends with `...`.
 
 ### Labels
 
