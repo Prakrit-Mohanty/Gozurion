@@ -24,3 +24,7 @@ class TicketAuthError(GozuError):
 
 class TicketValidationError(GozuError):
     """400 from the ticket backend - permanently malformed request."""
+
+
+class MissingBranchError(GozuError):
+    """A finding has no branch. A ticket and a report need the real branch, so Gozurion never makes one up."""

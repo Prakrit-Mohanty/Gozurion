@@ -37,12 +37,37 @@ def commit_sha() -> str | None:
     return os.environ.get("GITHUB_SHA") or _run_git("rev-parse", "HEAD")
 
 
+def _branch_from_git() -> str | None:
+    """The branch that git reports. If HEAD is detached, a branch that points at the same commit.
+
+    A local branch wins over a remote branch. A remote branch loses its remote name, for example origin/.
+    """
+    name = _run_git("rev-parse", "--abbrev-ref", "HEAD")
+    if name and name != "HEAD":
+        return name
+    local = _run_git("for-each-ref", "--points-at", "HEAD", "--format=%(refname:short)", "refs/heads")
+    if local:
+        return local.splitlines()[0]
+    remote = _run_git("for-each-ref", "--points-at", "HEAD", "--format=%(refname:short)", "refs/remotes")
+    for ref in (remote or "").splitlines():
+        if not ref.endswith("/HEAD") and "/" in ref:
+            return ref.split("/", 1)[1]
+    return None
+
+
 def branch() -> str | None:
-    return (
-        os.environ.get("GITHUB_HEAD_REF")  # PR runs: the actual feature branch, not the merge ref
-        or os.environ.get("GITHUB_REF_NAME")
-        or _run_git("rev-parse", "--abbrev-ref", "HEAD")
-    )
+    """The branch of this run, or None if no branch can be found.
+
+    A pull request run gives the head branch. A tag run gives a tag name, which is not a branch.
+    Anything else asks git. A detached HEAD is not a branch, so git is asked which branch points at it.
+    """
+    head_ref = os.environ.get("GITHUB_HEAD_REF")
+    if head_ref:
+        return head_ref
+    ref_name = os.environ.get("GITHUB_REF_NAME")
+    if ref_name and os.environ.get("GITHUB_REF_TYPE") != "tag":
+        return ref_name
+    return _branch_from_git()
 
 
 def repo_full_name() -> str | None:

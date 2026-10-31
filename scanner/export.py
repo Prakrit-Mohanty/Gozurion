@@ -40,6 +40,7 @@ import sys
 
 from pydantic import BaseModel
 
+from core.errors import MissingBranchError
 from core.models import Finding
 from scanner import git_context
 from scanner.semgrep_scanner import SemgrepClient
@@ -68,7 +69,9 @@ def gather_git_metadata() -> GitMetadata:
         default_branch=git_context.default_branch(repo),
     )
     if meta.branch is None:
-        logger.warning("Couldn't determine branch - regression/reconciliation logic will be disabled for this report")
+        raise MissingBranchError(
+            "Couldn't determine the branch of this run. Set GITHUB_HEAD_REF or GITHUB_REF_NAME, or run on a branch."
+        )
     if meta.default_branch is None:
         logger.warning("Couldn't determine default_branch (no GITHUB_TOKEN / repo lookup failed) - same effect")
     return meta
@@ -136,12 +139,15 @@ def build_reports(meta: GitMetadata) -> dict[str, list[dict]]:
 def latest_prefix(repo_full_name: str | None, branch: str | None) -> str:
     """The fixed, non-commit-specific prefix the agent reads from - same
     shape scanner/export.py writes to and src/tools/tools.py reads from."""
-    return f"{repo_full_name or 'unknown-repo'}/{branch or 'unknown-branch'}/latest"
+    if not repo_full_name or not branch:
+        raise MissingBranchError("A report key needs the repo and the branch.")
+    return f"{repo_full_name}/{branch}/latest"
 
 
 def upload_reports(reports: dict[str, list[dict]], meta: GitMetadata) -> tuple[str, dict[str, str]]:
     bucket = os.environ.get("S3_BUCKET", "reports")
     latest = latest_prefix(meta.repo_full_name, meta.branch)
+    history_prefix = f"{meta.repo_full_name}/{meta.branch}/{meta.commit_sha or 'unknown-commit'}"
     storage = get_storage_client()
 
     keys = {}

@@ -10,7 +10,7 @@ from typing import Any
 import requests
 from temporalio import activity
 
-from core.errors import TicketAuthError, TicketValidationError
+from core.errors import MissingBranchError, TicketAuthError, TicketValidationError
 from core.models import Finding, Severity
 from ticket.adf import bullet_list, code_block, doc, expand, heading, paragraph, summarize
 from ticket.base import (
@@ -68,6 +68,14 @@ _SCANNER_DISPLAY_NAMES = {
     "trivy": "Trivy",
     "sonarqube": "SonarQube",
 }
+
+
+def _require_branch(finding: Finding) -> str:
+    """The branch of the finding. A ticket without a real branch is never made, because the fix has nowhere to go."""
+    branch = (finding.branch or "").strip()
+    if not branch:
+        raise MissingBranchError(f"Finding {finding.key} has no branch. Gozurion does not create a ticket without one.")
+    return branch
 
 
 def _scanner_label(source_tool: str) -> str:
@@ -201,10 +209,10 @@ class JiraClient(TicketClient):
 
     def _build_labels(self, finding: Finding) -> list[str]:
         """issue-{identity} is the actual dedupe mechanism; branch-{branch} is informational only."""
-        labels = [f"issue-{finding_identity(finding)}"]
-        if finding.branch:
-            labels.append(f"branch-{_normalize_label_value(finding.branch)}")
-        return labels
+        return [
+            f"issue-{finding_identity(finding)}",
+            f"branch-{_normalize_label_value(_require_branch(finding))}",
+        ]
 
     def _build_description(
         self,
@@ -228,7 +236,7 @@ class JiraClient(TicketClient):
             details.append(f"Severity: {finding.severity.value}")
         details += [
             f"Source: {finding.source_tool}",
-            f"Branch: {finding.branch or 'unknown'}",
+            f"Branch: {_require_branch(finding)}",
         ]
         if finding.commit_sha:
             details.append(f"Commit: {finding.commit_sha[:10]}")
@@ -304,6 +312,7 @@ class JiraClient(TicketClient):
 
     def create_ticket(self, finding: Finding, custom_fields: dict[str, str] | None = None) -> str:
         """Create a Jira issue, return its key. Falls back to Description if custom_fields are rejected."""
+        _require_branch(finding)
         custom_fields = custom_fields or {}
         component_field_id = custom_fields.get(CUSTOM_FIELD_COMPONENT_NAME)
         line_field_id = custom_fields.get(CUSTOM_FIELD_LINE_NAME)
