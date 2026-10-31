@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "note": "The golden tickets of the Gozu ticket contract. The same file is in Gozurion, in the Gozu CLI and in veil. Run gozu/scripts/check-ticket-contract.sh to check the three copies.",
+  "cases": [
+    {
+      "name": "a finding with a line",
+      "finding": {
+        "repo": "acme/app",
+        "component": "backend/app.py",
+        "line": 5,
+        "title": "Use of eval()",
+        "rule": "python.lang.security.eval",
+        "type": "vulnerability",
+        "severity": "MEDIUM",
+        "source": "semgrep",
+        "branch": "feature/login",
+        "commit": "abc1234567"
+      },
+      "expected": {
+        "title": "[acme/app] backend/app.py:5 - Use of eval()",
+        "priority": "Medium",
+        "labels": [
+          "issue-b741a67454933b0e85d8",
+          "source-semgrep",
+          "repo-acme-app",
+          "branch-feature/login"
+        ],
+        "details": [
+          "Repository: acme/app",
+          "Component: backend/app.py",
+          "Line: 5",
+          "Type: vulnerability",
+          "Rule: python.lang.security.eval",
+          "Severity: MEDIUM",
+          "Source: semgrep",
+          "Branch: feature/login",
+          "Commit: abc1234567"
+        ]
+      }
+    },
+    {
+      "name": "a package finding with no line",
+      "finding": {
+        "repo": "acme/app",
+        "component": "requirements.txt",
+        "line": null,
+        "title": "CVE-2018-1000656: flask denial of service",
+        "rule": "CVE-2018-1000656",
+        "type": "vulnerability",
+        "severity": "HIGH",
+        "source": "trivy",
+        "branch": "main",
+        "commit": "def4567890"
+      },
+      "expected": {
+        "title": "[acme/app] requirements.txt - CVE-2018-1000656: flask denial of service",
+        "priority": "High",
+        "labels": [
+          "issue-5b98b432ffdec5e4b74f",
+          "source-trivy",
+          "repo-acme-app",
+          "branch-main"
+        ],
+        "details": [
+          "Repository: acme/app",
+          "Component: requirements.txt",
+          "Type: vulnerability",
+          "Rule: CVE-2018-1000656",
+          "Severity: HIGH",
+          "Source: trivy",
+          "Branch: main",
+          "Commit: def4567890"
+        ]
+      }
+    },
+    {
+      "name": "a long path keeps the file name",
+      "finding": {
+        "repo": "acme/app",
+        "component": "frontend/src/components/dashboard/widgets/charts/legend/LegendItemWithTooltip.tsx",
+        "line": 120,
+        "title": "React dangerouslySetInnerHTML with a value that is not a constant",
+        "rule": "react.dangerouslysetinnerhtml",
+        "type": "vulnerability",
+        "severity": "MEDIUM",
+        "source": "semgrep",
+        "branch": "main",
+        "commit": "0123456789"
+      },
+      "expected": {
+        "title": "[acme/app] .../legend/LegendItemWithTooltip.tsx:120 - React dangerouslySetInnerHTML with a value that is not a constant",
+        "priority": "Medium",
+        "labels": [
+          "issue-be194dbd982461ad37ca",
+          "source-semgrep",
+          "repo-acme-app",
+          "branch-main"
+        ],
+        "details": [
+          "Repository: acme/app",
+          "Component: frontend/src/components/dashboard/widgets/charts/legend/LegendItemWithTooltip.tsx",
+          "Line: 120",
+          "Type: vulnerability",
+          "Rule: react.dangerouslysetinnerhtml",
+          "Severity: MEDIUM",
+          "Source: semgrep",
+          "Branch: main",
+          "Commit: 0123456789"
+        ]
+      }
+    },
+    {
+      "name": "a long title is cut and ends with three dots",
+      "finding": {
+        "repo": "acme/app",
+        "component": "src/app.py",
+        "line": 7,
+        "title": "Detected a string concatenation with a non-literal variable in a util.format function so an attacker can forge the log message by injecting a format specifier",
+        "rule": "javascript.unsafe-formatstring",
+        "type": "vulnerability",
+        "severity": "LOW",
+        "source": "semgrep",
+        "branch": "main",
+        "commit": "aaaaaaaaaa"
+      },
+      "expected": {
+        "title": "[acme/app] src/app.py:7 - Detected a string concatenation with a non-literal variable in a util.format function so an...",
+        "priority": "Low",
+        "labels": [
+          "issue-a83936563fb6301ab9d9",
+          "source-semgrep",
+          "repo-acme-app",
+          "branch-main"
+        ],
+        "details": [
+          "Repository: acme/app",
+          "Component: src/app.py",
+          "Line: 7",
+          "Type: vulnerability",
+          "Rule: javascript.unsafe-formatstring",
+          "Severity: LOW",
+          "Source: semgrep",
+          "Branch: main",
+          "Commit: aaaaaaaaaa"
+        ]
+      }
+    }
+  ]
+}

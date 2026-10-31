@@ -40,7 +40,7 @@ import sys
 
 from pydantic import BaseModel
 
-from core.errors import MissingBranchError
+from core.errors import MissingBranchError, MissingRepositoryError
 from core.models import Finding
 from scanner import git_context
 from scanner.semgrep_scanner import SemgrepClient
@@ -71,6 +71,10 @@ def gather_git_metadata() -> GitMetadata:
     if meta.branch is None:
         raise MissingBranchError(
             "Couldn't determine the branch of this run. Set GITHUB_HEAD_REF or GITHUB_REF_NAME, or run on a branch."
+        )
+    if meta.repo_full_name is None:
+        raise MissingRepositoryError(
+            "Couldn't determine the repository of this run. Set GITHUB_REPOSITORY, or run in a clone with a GitHub remote."
         )
     if meta.default_branch is None:
         logger.warning("Couldn't determine default_branch (no GITHUB_TOKEN / repo lookup failed) - same effect")

@@ -10,16 +10,21 @@ from typing import Any
 import requests
 from temporalio import activity
 
-from core.errors import MissingBranchError, TicketAuthError, TicketValidationError
+from core.errors import (
+    MissingBranchError,
+    MissingRepositoryError,
+    TicketAuthError,
+    TicketValidationError,
+)
 from core.models import Finding, Severity
 from ticket.adf import bullet_list, code_block, doc, expand, heading, paragraph, summarize
 from ticket.base import (
     DEFAULT_PRIORITY,
     SEVERITY_TO_PRIORITY,
-    SUMMARY_MAX_LENGTH,
     TicketClient,
     finding_identity,
 )
+from ticket.contract import repo_label, ticket_title
 from ticket.jira_sprint import SprintAssigner
 
 ROLLUP_LABEL = "gozu-backlog-rollup"
@@ -68,6 +73,14 @@ _SCANNER_DISPLAY_NAMES = {
     "trivy": "Trivy",
     "sonarqube": "SonarQube",
 }
+
+
+def _require_repo(finding: Finding) -> str:
+    """The repository of the finding. A ticket without it is never made, because a fix has nowhere to go."""
+    repo = (finding.repo_full_name or "").strip()
+    if not repo:
+        raise MissingRepositoryError(f"Finding {finding.key} has no repository. Gozurion does not create a ticket without one.")
+    return repo
 
 
 def _require_branch(finding: Finding) -> str:
@@ -202,15 +215,15 @@ class JiraClient(TicketClient):
         return SEVERITY_TO_PRIORITY.get(severity, DEFAULT_PRIORITY)
 
     def _build_summary(self, finding: Finding) -> str:
-        summary = f"{_title_prefix(finding)}{finding.title}"
-        if len(summary) > SUMMARY_MAX_LENGTH:
-            summary = summary[: SUMMARY_MAX_LENGTH - 3] + "..."
-        return summary
+        """The title follows the Gozu ticket contract: "[owner/repo] path:line - title" (ticket/contract.py)."""
+        return ticket_title(_require_repo(finding), finding.component, finding.line, finding.title)
 
     def _build_labels(self, finding: Finding) -> list[str]:
         """issue-{identity} is the actual dedupe mechanism; branch-{branch} is informational only."""
         return [
             f"issue-{finding_identity(finding)}",
+            f"source-{_normalize_label_value(finding.source_tool)}",
+            repo_label(_require_repo(finding)),
             f"branch-{_normalize_label_value(_require_branch(finding))}",
         ]
 
@@ -223,8 +236,7 @@ class JiraClient(TicketClient):
     ) -> dict:
         """`*_moved` means that value is set as a real custom field instead, so it's dropped here to avoid duplication."""
         details = []
-        if finding.repo_full_name:
-            details.append(f"Repository: {finding.repo_full_name}")
+        details.append(f"Repository: {_require_repo(finding)}")
         if not component_moved:
             details.append(f"Component: {finding.component}")
         if finding.line is not None and not line_moved:
@@ -312,6 +324,7 @@ class JiraClient(TicketClient):
 
     def create_ticket(self, finding: Finding, custom_fields: dict[str, str] | None = None) -> str:
         """Create a Jira issue, return its key. Falls back to Description if custom_fields are rejected."""
+        _require_repo(finding)
         _require_branch(finding)
         custom_fields = custom_fields or {}
         component_field_id = custom_fields.get(CUSTOM_FIELD_COMPONENT_NAME)

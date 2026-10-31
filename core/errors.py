@@ -28,3 +28,7 @@ class TicketValidationError(GozuError):
 
 class MissingBranchError(GozuError):
     """A finding has no branch. A ticket and a report need the real branch, so Gozurion never makes one up."""
+
+
+class MissingRepositoryError(GozuError):
+    """A finding has no repository. A ticket needs it, so Gozurion never makes one without it."""
