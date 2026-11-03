@@ -3,7 +3,7 @@
 Subscribed to s3:ObjectCreated:* on the reports bucket, filtered to keys
 ending in "latest/meta.json". scanner/export.py's upload_reports() writes
 that object last, so by the time this fires the repo/branch's
-latest/combined.json is already in place.
+latest/meta.json holds the findings list.
 
 All this does is put a sonar_to_jira workflow on the agent's task queue -
 the Aetherion worker picks it up and does the actual work. Same workflow

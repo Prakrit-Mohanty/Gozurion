@@ -31,20 +31,20 @@ def _bucket() -> str:
 
 @tool()
 async def fetch_report_from_s3(repo_full_name: str, branch: str = "main") -> list[dict]:
-    """Download the latest combined findings report (JSON list of Finding dicts) for a repo/branch -
+    """Download the latest findings report (latest/meta.json: a JSON list of Finding dicts) for a repo/branch -
     bucket comes from _bucket(). Reads the fixed "latest" pointer scanner/export.py overwrites every
     run, not a commit-specific key - deployed org-wide, the agent is only ever told which repo/branch
     to check, never a fresh key per run."""
 
     def _fetch() -> list[dict]:
         bucket = _bucket()
-        key = f"{latest_prefix(repo_full_name, branch)}/combined.json"
+        key = f"{latest_prefix(repo_full_name, branch)}/meta.json"
         return json.loads(get_storage_client().download(bucket, key))
 
     return await asyncio.to_thread(_fetch)
 
 
-# scanner/export.py writes this last, next to latest/combined.json - see
+# scanner/export.py writes this - see
 # upload_reports(). Keeping the suffix here instead of importing it from
 # scanner/export.py: that module only exposes the *prefix* builder
 # (latest_prefix), since the exporter itself never needs the "/latest/" segment

@@ -7,9 +7,9 @@ Any org repo's CI (calls the reusable workflow below)
   semgrep/trivy/sonarqube  →  scanner/export.py (this repo)
                           |
                           v
-        S3 - the Aetherion reports bucket, {repo_full_name}/{branch}/latest/combined.json
-                          and latest/meta.json (overwritten every run, meta.json last -
-                          the only place the exporter writes and the agent reads)
+        S3 - the Aetherion reports bucket, {repo_full_name}/{branch}/latest/meta.json
+                          (overwritten every run - the only place the exporter writes
+                          and the agent reads)
                           |  ObjectCreated on latest/meta.json
                           v
      Lambda (lambda/trigger_agent/) - queues sonar_to_jira on Temporal
@@ -183,8 +183,8 @@ Temporal's durability.
 Two ways, both the same `sonar_to_jira` agent:
 
 - **From S3, per repo/branch.** `lambda/trigger_agent/` is subscribed to
-  `s3:ObjectCreated:*` on keys ending in `latest/meta.json`. The exporter writes that
-  object last, so `combined.json` is already in place when the Lambda runs. The
+  `s3:ObjectCreated:*` on keys ending in `latest/meta.json`. The exporter's only
+  upload is that object, a JSON list of findings. The
   Lambda reads `repo_full_name`/`branch` out of that `meta.json`, gets a token for an
   Aetherion service account (Keycloak client-credentials), and starts `sonar_to_jira`
   with `{"repo_full_name", "branch"}` on the published agent's task queue. It does not

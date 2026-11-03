@@ -7,11 +7,10 @@
 """
 Standalone report exporter: fetches findings from one or more scanners,
 stamps commit/branch/repo metadata, merges every scanner's findings into
-one "combined" report and uploads it to S3 (see docs/REPORT_CONTRACT.md) -
-under one fixed "latest" prefix per repo/branch, overwritten every run,
-with meta.json written last:
+one combined report and uploads it to S3 as the single file
+latest/meta.json (see docs/REPORT_CONTRACT.md) - a JSON list of the stamped
+findings, under one fixed "latest" prefix per repo/branch, overwritten every run:
 
-    {bucket}/{repo_full_name}/{branch}/latest/combined.json
     {bucket}/{repo_full_name}/{branch}/latest/meta.json
 
 Runs before/outside the Temporal agent. Deployed org-wide (many repos,
@@ -145,22 +144,15 @@ def latest_prefix(repo_full_name: str | None, branch: str | None) -> str:
 def upload_reports(reports: dict[str, list[dict]], meta: GitMetadata) -> tuple[str, dict[str, str]]:
     bucket = os.environ.get("S3_BUCKET", "reports")
     latest = latest_prefix(meta.repo_full_name, meta.branch)
-    history_prefix = f"{meta.repo_full_name}/{meta.branch}/{meta.commit_sha or 'unknown-commit'}"
     storage = get_storage_client()
 
-    keys = {}
-    for name, report in reports.items():
-        key = f"{latest}/{name}.json"
-        storage.upload(bucket, key, json.dumps(report).encode("utf-8"))
-        keys[name] = key
-
-    # Written last, and even when a report has zero findings. Its upload is
-    # what fires the trigger Lambda (lambda/trigger_agent/), so the reports
-    # above must already be in place, and the agent's discovery
-    # (src/tools/tools.py's discover_new_reports) reads commit_sha from it
-    # without depending on combined.json containing anything.
-    meta_body = json.dumps(meta.model_dump(mode="json")).encode("utf-8")
-    storage.upload(bucket, f"{latest}/meta.json", meta_body)
+    # The one object: the combined findings list, stored as meta.json. Its upload
+    # fires the trigger Lambda (lambda/trigger_agent/), which reads repo_full_name
+    # and branch off the first finding (or the key), and the agent's discovery reads
+    # commit_sha the same way.
+    key = f"{latest}/meta.json"
+    storage.upload(bucket, key, json.dumps(reports["combined"]).encode("utf-8"))
+    keys = {"combined": key}
 
     return bucket, keys
 

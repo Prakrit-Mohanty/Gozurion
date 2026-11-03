@@ -1,19 +1,17 @@
 # S3 report contract
 
-`scanner/export.py` uploads the combined report (every enabled scanner merged, no per-scanner files) to one fixed "latest" prefix per
-repo/branch, overwritten every run. There are no per-commit copies:
+`scanner/export.py` uploads one file per repo/branch, overwritten every run (no
+per-commit copies, no per-scanner files):
 
-    {bucket}/{repo_full_name}/{branch}/latest/combined.json
     {bucket}/{repo_full_name}/{branch}/latest/meta.json
 
-`meta.json` is written last. Its upload is what fires the trigger Lambda
-(`lambda/trigger_agent/`), so `combined.json` is always in place by then.
-
-`meta.json` is the `GitMetadata` (`commit_sha`/`branch`/`repo_full_name`/`default_branch`)
-stamped on every finding in that same run, written even when the run had zero
-findings - the agent's multi-repo discovery (`discover_new_reports` in
-`src/tools/tools.py`) needs a commit_sha to check against regardless of whether
-`combined.json` has anything in it to read one off of.
+`meta.json` is the combined report: a JSON array of `Finding` objects from every
+enabled scanner, each stamped with `commit_sha`/`branch`/`repo_full_name`/`default_branch`.
+Its upload is what fires the trigger Lambda (`lambda/trigger_agent/`), which takes
+`repo_full_name`/`branch` from the first finding, or from the key if the list is empty.
+The agent's multi-repo discovery (`discover_new_reports` in `src/tools/tools.py`)
+reads `commit_sha` off the first finding the same way. A run with zero findings
+writes `[]`, which has no `commit_sha`, so discovery skips it.
 
 The agent also owns one more prefix in the same bucket, not written by the
 exporter:
@@ -29,7 +27,7 @@ search below), so a missing/stale/lost state file just costs some redundant
 Jira searches, never a duplicate ticket.
 
 `fetch_report_from_s3(repo_full_name, branch="main")` downloads the
-`latest/combined.json` JSON array of `Finding` objects (see
+`latest/meta.json` JSON array of `Finding` objects (see
 `report-schema.json`, generated from `core/models.py` via
 `scripts/generate_report_schema.py` - regenerate after changing `Finding`).
 Deployed org-wide across many repos each exporting on its own schedule,
@@ -54,7 +52,7 @@ use (e.g. only ticketing findings on the default branch), not because anything
 today depends on it being set.
 
 Only ever point the agent (or anything else consuming this contract) at
-a `latest/combined.json` produced by this
+a `latest/meta.json` produced by this
 exporter. A shared bucket can end up with other pipelines' ad-hoc scanner
 dumps sitting alongside these (e.g. a raw `semgrep --json` CLI output file
 someone uploaded directly) - those aren't normalized `Finding` objects and
