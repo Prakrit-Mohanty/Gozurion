@@ -7,9 +7,9 @@ Any org repo's CI (calls the reusable workflow below)
   semgrep/trivy/sonarqube  →  scanner/export.py (this repo)
                           |
                           v
-        S3 - the Aetherion reports bucket, {repo_full_name}/{branch}/{commit_sha}/combined.json
-                          (history) and {repo_full_name}/{branch}/latest/combined.json
-                          (always overwritten - what the agent reads)
+        S3 - the Aetherion reports bucket, {repo_full_name}/{branch}/latest/combined.json
+                          and latest/meta.json (overwritten every run, meta.json last -
+                          the only place the exporter writes and the agent reads)
                           |  ObjectCreated on latest/meta.json
                           v
      Lambda (lambda/trigger_agent/) - queues sonar_to_jira on Temporal
