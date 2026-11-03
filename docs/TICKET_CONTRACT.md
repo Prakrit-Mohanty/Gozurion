@@ -34,7 +34,13 @@ The old label `source-key-<scanner key>` is not written any more. The Gozu CLI s
 
 ### Description
 
-A short paragraph about the problem, then a Details list in this order. Leave out a line that has no value.
+The description has three sections, in this order:
+
+1. **Description:** a short paragraph about the problem and its risk. Gozurion writes it in ASD-STE100 (`ticket/ste.py`). If that step fails, the scanner message is used.
+2. **Details:** the list below.
+3. **Recommended action:** what to do, in ASD-STE100. If that step fails, the scanner's fix text is used. If there is no fix text, the action is "Review `<file>` at line `<line>`."
+
+The Details list is in this order. Leave out a line that has no value.
 
 ```
 Repository: owner/repo
@@ -48,7 +54,7 @@ Branch: feature/login
 Commit: 0123456789
 ```
 
-A package finding also has `Package`, `Installed version` and `Fixed version` after `Component`. The section "Recommended action" follows when the scanner gives one.
+A package finding also has `Package`, `Installed version` and `Fixed version` after `Component`.
 
 ### Other fields
 

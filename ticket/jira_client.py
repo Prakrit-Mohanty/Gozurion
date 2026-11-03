@@ -254,18 +254,31 @@ class JiraClient(TicketClient):
         ]
         if finding.commit_sha:
             details.append(f"Commit: {finding.commit_sha[:10]}")
-        short, full = summarize(finding.llm_explanation or finding.message)
-        content = [paragraph(short)]
-        if full:
-            content.append(expand("Full description", paragraph(full[:10000])))
+        content = [heading("Description")]
+        if finding.llm_explanation:
+            # Already short: the agent's ASD-STE100 rewrite (ticket/ste.py).
+            content.append(paragraph(finding.llm_explanation))
+        else:
+            short, full = summarize(finding.message)
+            content.append(paragraph(short))
+            if full:
+                content.append(expand("Full description", paragraph(full[:10000])))
         content += [heading("Details"), bullet_list(details)]
-        if finding.how_to_fix:
-            fix = finding.how_to_fix
-            if "\n" not in fix and len(fix) <= 160:
-                content += [heading("Recommended action"), paragraph(fix)]
-            else:
-                content += [heading("How to fix"), code_block(fix[:10000])]
+        content += self._build_action(finding)
         return doc(*content)
+
+    def _build_action(self, finding: Finding) -> list[dict]:
+        """Every ticket ends with what to do: the agent's ASD-STE100 action, else the scanner's
+        own fix text, else an instruction to review the flagged location."""
+        if finding.recommended_action:
+            return [heading("Recommended action"), paragraph(finding.recommended_action)]
+        fix = finding.how_to_fix
+        if fix and ("\n" in fix or len(fix) > 160):
+            return [heading("How to fix"), code_block(fix[:10000])]
+        if not fix:
+            at_line = f" at line {finding.line}" if finding.line is not None else ""
+            fix = f"Review {finding.component}{at_line}."
+        return [heading("Recommended action"), paragraph(fix)]
 
     def discover_custom_fields(self, names: list[str]) -> dict[str, str]:
         """name -> "customfield_XXXXX" for whichever of `names` exist in this Jira instance."""

@@ -167,6 +167,19 @@ def _find_already_ticketed(ticket_client, findings: list[Finding]) -> dict[str, 
 
 
 @tool()
+async def select_new_findings(findings: list[dict]) -> list[dict]:
+    """The findings that don't have a Jira ticket yet - so the agent spends LLM calls (the
+    ASD-STE100 rewrite, ticket/ste.py) only on tickets it is about to create."""
+
+    def _select() -> list[dict]:
+        parsed = [Finding.model_validate(raw) for raw in findings]
+        already_ticketed = _find_already_ticketed(get_ticket_client(), parsed)
+        return [raw for raw, finding in zip(findings, parsed) if finding.key not in already_ticketed]
+
+    return await asyncio.to_thread(_select)
+
+
+@tool()
 async def create_jira_tickets(findings: list[dict]) -> dict:
     """Create Jira tickets for findings that don't already have one (Jira label search, no DB) -
     each new ticket gets a screenshot attached (code snippet, or an info card for line-less findings)."""

@@ -35,7 +35,8 @@ class Finding(BaseModel):
     default_branch: str | None = None  # this repo's trunk, e.g. "main" - not necessarily `branch`
     how_to_fix: str | None = None  # rule-level guidance, not fix-specific
     rule_key: str | None = None  # e.g. "python:S2068"
-    llm_explanation: str | None = None  # LLM-generated explanation/fix
+    llm_explanation: str | None = None  # LLM-written Description paragraph, in ASD-STE100 (ticket/ste.py)
+    recommended_action: str | None = None  # LLM-written Recommended action, in ASD-STE100 (ticket/ste.py)
     code_snippet: str | None = None
     code_snippet_start_line: int | None = None
 

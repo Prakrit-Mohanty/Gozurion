@@ -145,6 +145,18 @@
         "default": null,
         "title": "Llm Explanation"
       },
+      "recommended_action": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Recommended Action"
+      },
       "code_snippet": {
         "anyOf": [
           {
