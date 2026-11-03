@@ -6,12 +6,11 @@
 
 """
 Standalone report exporter: fetches findings from one or more scanners,
-stamps commit/branch/repo metadata, uploads one JSON report per scanner
-to S3, plus a "combined" report merging all of them (see
-docs/REPORT_CONTRACT.md) - all under one fixed "latest" prefix per
-repo/branch, overwritten every run, with meta.json written last:
+stamps commit/branch/repo metadata, merges every scanner's findings into
+one "combined" report and uploads it to S3 (see docs/REPORT_CONTRACT.md) -
+under one fixed "latest" prefix per repo/branch, overwritten every run,
+with meta.json written last:
 
-    {bucket}/{repo_full_name}/{branch}/latest/{scanner}.json
     {bucket}/{repo_full_name}/{branch}/latest/combined.json
     {bucket}/{repo_full_name}/{branch}/latest/meta.json
 
@@ -121,12 +120,8 @@ def _stamp(finding: Finding, meta: GitMetadata) -> dict:
 
 
 def build_reports(meta: GitMetadata) -> dict[str, list[dict]]:
-    """One report per enabled scanner, keyed by scanner name, plus a
-    "combined" report - the full snapshot the agent's reconciliation step
-    needs (see docs/REPORT_CONTRACT.md); splitting per scanner without it
-    would make reconciliation wrongly auto-close tickets for findings from
-    scanners that particular fetch didn't include."""
-    by_scanner: dict[str, list[dict]] = {}
+    """Only the "combined" report - the full snapshot of every enabled scanner
+    that the agent's reconciliation step needs (see docs/REPORT_CONTRACT.md)."""
     combined: list[dict] = []
     for name in _enabled_scanners():
         runner = _SCANNERS.get(name)
@@ -134,10 +129,9 @@ def build_reports(meta: GitMetadata) -> dict[str, list[dict]]:
             logger.warning(f"Unknown scanner '{name}' in ENABLED_SCANNERS, skipping")
             continue
         stamped = [_stamp(finding, meta) for finding in runner(meta)]
-        by_scanner[name] = stamped
         combined.extend(stamped)
 
-    return {**by_scanner, "combined": combined}
+    return {"combined": combined}
 
 
 def latest_prefix(repo_full_name: str | None, branch: str | None) -> str:

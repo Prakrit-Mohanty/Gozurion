@@ -1,9 +1,8 @@
 # S3 report contract
 
-`scanner/export.py` uploads each report to one fixed "latest" prefix per
+`scanner/export.py` uploads the combined report (every enabled scanner merged, no per-scanner files) to one fixed "latest" prefix per
 repo/branch, overwritten every run. There are no per-commit copies:
 
-    {bucket}/{repo_full_name}/{branch}/latest/{scanner}.json
     {bucket}/{repo_full_name}/{branch}/latest/combined.json
     {bucket}/{repo_full_name}/{branch}/latest/meta.json
 
