@@ -215,8 +215,10 @@ class JiraClient(TicketClient):
         return SEVERITY_TO_PRIORITY.get(severity, DEFAULT_PRIORITY)
 
     def _build_summary(self, finding: Finding) -> str:
-        """The title follows the Gozu ticket contract: "[owner/repo] path:line - title" (ticket/contract.py)."""
-        return ticket_title(_require_repo(finding), finding.component, finding.line, finding.title)
+        """The title follows the Gozu ticket contract: "repo | branch | file | line | title" (ticket/contract.py)."""
+        return ticket_title(
+            _require_repo(finding), _require_branch(finding), finding.component, finding.line, finding.title
+        )
 
     def _build_labels(self, finding: Finding) -> list[str]:
         """issue-{identity} is the actual dedupe mechanism; branch-{branch} is informational only."""
