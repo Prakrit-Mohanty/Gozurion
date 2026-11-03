@@ -13,7 +13,7 @@ TITLE_MAX_LENGTH = 120
 
 
 def ticket_title(repo: str, branch: str, path: str, line: int | None, title: str) -> str:
-    """ "repo | branch | file.py | 42 | Rule title", at most 120 characters.
+    """ "| repo | branch | file.py | 42 | Rule title", at most 120 characters.
 
     The repo is the name without the owner. The branch is whole. The file is the last part of the path.
     A finding with no line has no line part. If the title is too long, it is cut and ends with "...".
@@ -22,7 +22,7 @@ def ticket_title(repo: str, branch: str, path: str, line: int | None, title: str
     parts = [repo.strip().split("/")[-1], branch.strip(), path.strip().split("/")[-1]]
     if line is not None:
         parts.append(str(line))
-    head = " | ".join(parts) + " | "
+    head = "| " + " | ".join(parts) + " | "
     text = " ".join(title.split())
     if len(head) + len(text) <= TITLE_MAX_LENGTH:
         return head + text

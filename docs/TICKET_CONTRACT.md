@@ -11,7 +11,7 @@ A ticket needs a repository and a branch. A tool that cannot find them stops bef
 ### Title
 
 ```
-repo | branch | file.py | 42 | Rule title
+| repo | branch | file.py | 42 | Rule title
 ```
 
 - The repo is the name without the owner. The branch is the whole branch name. The file is the last part of the path. The Details list has the full repository and path.
