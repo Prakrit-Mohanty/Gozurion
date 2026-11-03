@@ -44,8 +44,8 @@ async def fetch_report_from_s3(repo_full_name: str, branch: str = "main") -> lis
     return await asyncio.to_thread(_fetch)
 
 
-# scanner/export.py writes this alongside every combined.json, latest or history -
-# see upload_reports(). Keeping the suffix here instead of importing it from
+# scanner/export.py writes this last, next to latest/combined.json - see
+# upload_reports(). Keeping the suffix here instead of importing it from
 # scanner/export.py: that module only exposes the *prefix* builder
 # (latest_prefix), since the exporter itself never needs the "/latest/" segment
 # by itself the way discovery below does.
@@ -98,7 +98,12 @@ def _new_report(
 ) -> dict | None:
     """The discover_new_reports entry for one repo/branch, or None if its latest commit_sha is
     missing or already recorded as processed."""
-    commit_sha = json.loads(storage.download(bucket, meta_key)).get("commit_sha")
+    meta = json.loads(storage.download(bucket, meta_key))
+    # scanner/export.py writes an object; a list (e.g. of stamped findings) is accepted too,
+    # taking commit_sha from its first entry that has one.
+    if isinstance(meta, list):
+        meta = next((m for m in meta if isinstance(m, dict) and m.get("commit_sha")), {})
+    commit_sha = meta.get("commit_sha") if isinstance(meta, dict) else None
     if commit_sha is None:
         return None
 

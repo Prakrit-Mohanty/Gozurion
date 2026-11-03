@@ -17,9 +17,10 @@ used:
   racing it on the Jira dedup search. S3 delivers events at least once, and
   this also absorbs a redelivered event.
 
-repo_full_name/branch are read out of meta.json itself rather than parsed
-from the key - a branch name can contain "/" (feature/foo), which makes the
-{owner}/{repo}/{branch}/latest/meta.json key ambiguous to split.
+repo_full_name/branch are read out of meta.json itself (an object, or a list
+whose entries carry them), falling back to the key when the file doesn't name
+them. The key splits safely because repo_full_name is always owner/repo, so
+everything between it and /latest/meta.json is the branch, slashes included.
 """
 
 from __future__ import annotations
@@ -65,6 +66,26 @@ def _fetch_token() -> str:
     return token
 
 
+_META_SUFFIX = "/latest/meta.json"
+
+
+def _repo_and_branch(meta, key: str) -> tuple[str, str] | None:
+    """repo_full_name/branch for one meta.json. scanner/export.py writes an object, but a list
+    (e.g. of stamped findings) is accepted too - the first entry carrying repo_full_name wins.
+    Falls back to the key itself: {owner}/{repo}/{branch}/latest/meta.json, where everything
+    after the first two segments is the branch, slashes included."""
+    if isinstance(meta, list):
+        meta = next((m for m in meta if isinstance(m, dict) and m.get("repo_full_name")), {})
+    if isinstance(meta, dict) and meta.get("repo_full_name") and meta.get("branch"):
+        return meta["repo_full_name"], meta["branch"]
+
+    if key.endswith(_META_SUFFIX):
+        parts = key[: -len(_META_SUFFIX)].split("/", 2)
+        if len(parts) == 3 and all(parts):
+            return f"{parts[0]}/{parts[1]}", parts[2]
+    return None
+
+
 def _reports_from_event(event: dict) -> set[tuple[str, str]]:
     reports = set()
     for record in event.get("Records", []):
@@ -72,14 +93,16 @@ def _reports_from_event(event: dict) -> set[tuple[str, str]]:
         # S3 event keys are URL-encoded (spaces as "+").
         key = urllib.parse.unquote_plus(record["s3"]["object"]["key"])
         meta = json.loads(_s3.get_object(Bucket=bucket, Key=key)["Body"].read())
+        if not isinstance(meta, dict):
+            logger.warning(f"s3://{bucket}/{key} is a JSON {type(meta).__name__}, not an object")
 
-        repo_full_name, branch = meta.get("repo_full_name"), meta.get("branch")
-        if not repo_full_name or not branch:
-            # The exporter couldn't resolve git context - the agent has no
-            # repo/branch to look this report up by, so there's nothing to start.
-            logger.warning(f"Skipping s3://{bucket}/{key}: meta.json has no repo_full_name/branch")
+        found = _repo_and_branch(meta, key)
+        if found is None:
+            # Neither the file nor its key names a repo/branch - the agent has
+            # nothing to look this report up by, so there's nothing to start.
+            logger.warning(f"Skipping s3://{bucket}/{key}: no repo_full_name/branch in meta.json or key")
             continue
-        reports.add((repo_full_name, branch))
+        reports.add(found)
     return reports
 
 
