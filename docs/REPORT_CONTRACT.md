@@ -1,15 +1,14 @@
 # S3 report contract
 
-`scanner/export.py` uploads two copies of each report - an immutable,
-commit-scoped one (history) and a fixed "latest" pointer (always
-overwritten), per repo/branch:
+`scanner/export.py` uploads each report to one fixed "latest" prefix per
+repo/branch, overwritten every run. There are no per-commit copies:
 
-    {bucket}/{repo_full_name}/{branch}/{commit_sha}/{scanner}.json
-    {bucket}/{repo_full_name}/{branch}/{commit_sha}/combined.json
-    {bucket}/{repo_full_name}/{branch}/{commit_sha}/meta.json
     {bucket}/{repo_full_name}/{branch}/latest/{scanner}.json
     {bucket}/{repo_full_name}/{branch}/latest/combined.json
     {bucket}/{repo_full_name}/{branch}/latest/meta.json
+
+`meta.json` is written last. Its upload is what fires the trigger Lambda
+(`lambda/trigger_agent/`), so `combined.json` is always in place by then.
 
 `meta.json` is the `GitMetadata` (`commit_sha`/`branch`/`repo_full_name`/`default_branch`)
 stamped on every finding in that same run, written even when the run had zero
@@ -56,7 +55,7 @@ use (e.g. only ticketing findings on the default branch), not because anything
 today depends on it being set.
 
 Only ever point the agent (or anything else consuming this contract) at
-a `latest/combined.json` or `{commit_sha}/combined.json` produced by this
+a `latest/combined.json` produced by this
 exporter. A shared bucket can end up with other pipelines' ad-hoc scanner
 dumps sitting alongside these (e.g. a raw `semgrep --json` CLI output file
 someone uploaded directly) - those aren't normalized `Finding` objects and

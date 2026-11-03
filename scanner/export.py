@@ -8,13 +8,12 @@
 Standalone report exporter: fetches findings from one or more scanners,
 stamps commit/branch/repo metadata, uploads one JSON report per scanner
 to S3, plus a "combined" report merging all of them (see
-docs/REPORT_CONTRACT.md) - keyed twice, once per run under its own
-commit (history) and once overwriting a fixed "latest" pointer:
+docs/REPORT_CONTRACT.md) - all under one fixed "latest" prefix per
+repo/branch, overwritten every run, with meta.json written last:
 
-    {bucket}/{repo_full_name}/{branch}/{commit_sha}/{scanner}.json
-    {bucket}/{repo_full_name}/{branch}/{commit_sha}/combined.json
     {bucket}/{repo_full_name}/{branch}/latest/{scanner}.json
     {bucket}/{repo_full_name}/{branch}/latest/combined.json
+    {bucket}/{repo_full_name}/{branch}/latest/meta.json
 
 Runs before/outside the Temporal agent. Deployed org-wide (many repos,
 each exporting on its own schedule), the agent can't be handed a fresh
@@ -142,24 +141,21 @@ def latest_prefix(repo_full_name: str | None, branch: str | None) -> str:
 
 def upload_reports(reports: dict[str, list[dict]], meta: GitMetadata) -> tuple[str, dict[str, str]]:
     bucket = os.environ.get("S3_BUCKET", "reports")
-    history_prefix = f"{meta.repo_full_name or 'unknown-repo'}/{meta.branch or 'unknown-branch'}/{meta.commit_sha or 'unknown-commit'}"
     latest = latest_prefix(meta.repo_full_name, meta.branch)
     storage = get_storage_client()
 
     keys = {}
     for name, report in reports.items():
-        body = json.dumps(report).encode("utf-8")
-        history_key = f"{history_prefix}/{name}.json"
-        storage.upload(bucket, history_key, body)
-        storage.upload(bucket, f"{latest}/{name}.json", body)
-        keys[name] = history_key
+        key = f"{latest}/{name}.json"
+        storage.upload(bucket, key, json.dumps(report).encode("utf-8"))
+        keys[name] = key
 
-    # Written even when a report has zero findings - the agent's multi-repo
-    # discovery (src/tools/tools.py's discover_new_reports) needs commit_sha
-    # to detect "is there a new report for this repo/branch" without
-    # depending on combined.json containing anything to read it off of.
+    # Written last, and even when a report has zero findings. Its upload is
+    # what fires the trigger Lambda (lambda/trigger_agent/), so the reports
+    # above must already be in place, and the agent's discovery
+    # (src/tools/tools.py's discover_new_reports) reads commit_sha from it
+    # without depending on combined.json containing anything.
     meta_body = json.dumps(meta.model_dump(mode="json")).encode("utf-8")
-    storage.upload(bucket, f"{history_prefix}/meta.json", meta_body)
     storage.upload(bucket, f"{latest}/meta.json", meta_body)
 
     return bucket, keys

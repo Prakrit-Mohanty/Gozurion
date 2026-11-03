@@ -1,5 +1,5 @@
 {
-    "name": "sonar_to_jira_agent",
+    "name": "sonar_to_jira",
     "version": "1.0.0",
     "description": "Creates Jira tickets for new scan reports in S3 - for one repo/branch if given (the CI trigger), otherwise for every repo/branch with a new report.",
     "config": {

@@ -35,7 +35,7 @@ runs inside a VPC, the VPC needs a NAT gateway.
 
 **S3 trigger:** event `s3:ObjectCreated:*`, suffix `latest/meta.json`. The suffix filter matters.
 The exporter writes several objects per run, but only this one marks a complete report. The
-suffix also skips the agent's own `_state/` writes and the per-commit history copies.
+suffix also skips the agent's own `_state/` writes.
 
 ```bash
 aws lambda add-permission --function-name gozurion-trigger-agent \

@@ -19,23 +19,33 @@ from ticket.factory import get_ticket_client
 from ticket.screenshot import build_screenshot
 
 
+def _bucket() -> str:
+    """The tenant's reports bucket. On an Aetherion worker the platform sets TENANT_ID, which is
+    the bucket name itself. S3_BUCKET is the fallback for running the agent locally, where no
+    tenant is set."""
+    bucket = os.getenv("TENANT_ID") or os.getenv("S3_BUCKET")
+    if not bucket:
+        raise RuntimeError("Neither TENANT_ID nor S3_BUCKET is set - no reports bucket to read")
+    return bucket
+
+
 @tool()
 async def fetch_report_from_s3(repo_full_name: str, branch: str = "main") -> list[dict]:
     """Download the latest combined findings report (JSON list of Finding dicts) for a repo/branch -
-    bucket comes from S3_BUCKET. Reads the fixed "latest" pointer scanner/export.py overwrites every
+    bucket comes from _bucket(). Reads the fixed "latest" pointer scanner/export.py overwrites every
     run, not a commit-specific key - deployed org-wide, the agent is only ever told which repo/branch
     to check, never a fresh key per run."""
 
     def _fetch() -> list[dict]:
-        bucket = os.environ["S3_BUCKET"]
+        bucket = _bucket()
         key = f"{latest_prefix(repo_full_name, branch)}/combined.json"
         return json.loads(get_storage_client().download(bucket, key))
 
     return await asyncio.to_thread(_fetch)
 
 
-# scanner/export.py writes this alongside every combined.json, latest or history -
-# see upload_reports(). Keeping the suffix here instead of importing it from
+# scanner/export.py writes this last, next to latest/combined.json - see
+# upload_reports(). Keeping the suffix here instead of importing it from
 # scanner/export.py: that module only exposes the *prefix* builder
 # (latest_prefix), since the exporter itself never needs the "/latest/" segment
 # by itself the way discovery below does.
@@ -56,7 +66,7 @@ async def discover_new_reports(
     right after its own upload, so it never picks up (and races over) other repos' reports."""
 
     def _discover() -> list[dict]:
-        bucket = os.environ["S3_BUCKET"]
+        bucket = _bucket()
         storage = get_storage_client()
 
         if repo_full_name is not None:
@@ -88,7 +98,12 @@ def _new_report(
 ) -> dict | None:
     """The discover_new_reports entry for one repo/branch, or None if its latest commit_sha is
     missing or already recorded as processed."""
-    commit_sha = json.loads(storage.download(bucket, meta_key)).get("commit_sha")
+    meta = json.loads(storage.download(bucket, meta_key))
+    # scanner/export.py writes an object; a list (e.g. of stamped findings) is accepted too,
+    # taking commit_sha from its first entry that has one.
+    if isinstance(meta, list):
+        meta = next((m for m in meta if isinstance(m, dict) and m.get("commit_sha")), {})
+    commit_sha = meta.get("commit_sha") if isinstance(meta, dict) else None
     if commit_sha is None:
         return None
 
@@ -114,7 +129,7 @@ async def record_processed_commit(repo_full_name: str, branch: str, commit_sha: 
     commit gets retried next time rather than silently skipped."""
 
     def _record() -> None:
-        bucket = os.environ["S3_BUCKET"]
+        bucket = _bucket()
         body = json.dumps({"commit_sha": commit_sha}).encode("utf-8")
         get_storage_client().upload(bucket, _state_key(repo_full_name, branch), body)
 

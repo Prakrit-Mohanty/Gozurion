@@ -7,9 +7,9 @@ Any org repo's CI (calls the reusable workflow below)
   semgrep/trivy/sonarqube  →  scanner/export.py (this repo)
                           |
                           v
-        S3 - the Aetherion reports bucket, {repo_full_name}/{branch}/{commit_sha}/combined.json
-                          (history) and {repo_full_name}/{branch}/latest/combined.json
-                          (always overwritten - what the agent reads)
+        S3 - the Aetherion reports bucket, {repo_full_name}/{branch}/latest/combined.json
+                          and latest/meta.json (overwritten every run, meta.json last -
+                          the only place the exporter writes and the agent reads)
                           |  ObjectCreated on latest/meta.json
                           v
      Lambda (lambda/trigger_agent/) - queues sonar_to_jira on Temporal
@@ -95,8 +95,11 @@ with nothing new" skip, not what prevents duplicate tickets — the Jira label s
 below still owns that, so a lost/stale state file costs redundant searches, never a
 duplicate ticket.
 
-`bucket` is **not** a trigger input — it comes from the `S3_BUCKET` env var, since
-it's fixed per deployment rather than something that varies per run. The Jira
+`bucket` is **not** a trigger input — it comes from the environment, since it's
+fixed per deployment rather than something that varies per run. On an Aetherion
+worker that's `TENANT_ID`, which the platform sets and which is the tenant's bucket
+name itself; `S3_BUCKET` is the fallback for local runs (`_bucket()` in
+`src/tools/tools.py`). The Jira
 destination (`JIRA_URL`/`JIRA_EMAIL`/`JIRA_API_TOKEN`/`JIRA_PROJECT_KEY`) is also one
 fixed value for the whole org, read from `.env` via `ticket/factory.py`'s
 `build_ticket_client()` — not per-run input, so every repo this agent discovers
