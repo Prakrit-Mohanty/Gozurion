@@ -11,6 +11,7 @@ from pathlib import Path
 from aetherion_sdk import tool
 from temporalio import activity
 
+from core.ignored_paths import is_ignored_path
 from core.models import Finding
 from scanner.export import latest_prefix
 from storage.factory import get_storage_client
@@ -173,7 +174,11 @@ async def create_jira_tickets(findings: list[dict]) -> dict:
 
     def _create() -> dict:
         ticket_client = get_ticket_client()
-        parsed = [Finding.model_validate(raw) for raw in findings]
+        parsed = [
+            finding
+            for finding in (Finding.model_validate(raw) for raw in findings)
+            if not is_ignored_path(finding.component)
+        ]
         already_ticketed = _find_already_ticketed(ticket_client, parsed)
 
         created: list[dict] = []

@@ -24,7 +24,7 @@ from ticket.base import (
     TicketClient,
     finding_identity,
 )
-from ticket.contract import repo_label, ticket_title
+from ticket.contract import ticket_title
 from ticket.jira_sprint import SprintAssigner
 
 ROLLUP_LABEL = "gozu-backlog-rollup"
@@ -224,8 +224,7 @@ class JiraClient(TicketClient):
         """issue-{identity} is the actual dedupe mechanism; branch-{branch} is informational only."""
         return [
             f"issue-{finding_identity(finding)}",
-            f"source-{_normalize_label_value(finding.source_tool)}",
-            repo_label(_require_repo(finding)),
+            _normalize_label_value(finding.source_tool),
             f"branch-{_normalize_label_value(_require_branch(finding))}",
         ]
 
@@ -488,7 +487,7 @@ class JiraClient(TicketClient):
                 "project": {"key": self.project_key},
                 "summary": summary,
                 "issuetype": {"name": "Task"},
-                "labels": ["source-sonarqube", ROLLUP_LABEL],
+                "labels": ["sonarqube", ROLLUP_LABEL],
                 "description": description,
             }
         }

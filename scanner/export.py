@@ -39,6 +39,7 @@ import sys
 from pydantic import BaseModel
 
 from core.errors import MissingBranchError, MissingRepositoryError
+from core.ignored_paths import is_ignored_path
 from core.models import Finding
 from scanner import git_context
 from scanner.semgrep_scanner import SemgrepClient
@@ -127,7 +128,7 @@ def build_reports(meta: GitMetadata) -> dict[str, list[dict]]:
         if runner is None:
             logger.warning(f"Unknown scanner '{name}' in ENABLED_SCANNERS, skipping")
             continue
-        stamped = [_stamp(finding, meta) for finding in runner(meta)]
+        stamped = [_stamp(finding, meta) for finding in runner(meta) if not is_ignored_path(finding.component)]
         combined.extend(stamped)
 
     return {"combined": combined}

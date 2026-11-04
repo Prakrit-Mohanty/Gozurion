@@ -7,7 +7,6 @@ The same rules are in the Gozu CLI (sonar-to-jira) and in veil. See docs/TICKET_
 and tests/contract/golden_tickets.json, which all three repos share.
 """
 
-import re
 
 TITLE_MAX_LENGTH = 120
 
@@ -29,7 +28,3 @@ def ticket_title(repo: str, branch: str, path: str, line: int | None, title: str
     room = max(TITLE_MAX_LENGTH - len(head) - 3, 10)
     return head + text[:room].rstrip() + "..."
 
-
-def repo_label(repo: str) -> str:
-    """ "repo-owner-name". A Jira label has no space, so every other mark becomes a hyphen."""
-    return "repo-" + re.sub(r"[^a-z0-9._-]+", "-", repo.strip().lower())

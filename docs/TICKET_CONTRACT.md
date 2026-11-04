@@ -24,8 +24,7 @@ A ticket needs a repository and a branch. A tool that cannot find them stops bef
 | Label | Meaning |
 |---|---|
 | `issue-<id>` | The identity of the finding: the first 20 characters of the SHA-1 of `repo`, `file`, `line`, `rule` and `type` joined by `\|`. The same finding gives the same label from every tool and on every branch. |
-| `source-<tool>` | The scanner: `semgrep`, `trivy` or `sonarqube`. |
-| `repo-<owner>-<name>` | The repository, in lower case. Filter a board by it. |
+| `<tool>` | The scanner: `semgrep`, `trivy` or `sonarqube`. |
 | `branch-<branch>` | The branch that the scan ran on. |
 
 veil adds `veil-failed-fix` to a ticket that it cannot fix. A person or a Jira rule adds `veil-eligible`, if the setting `eligible_label` asks for it.
