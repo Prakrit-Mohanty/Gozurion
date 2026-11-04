@@ -27,9 +27,6 @@ from ticket.base import (
 from ticket.contract import ticket_title
 from ticket.jira_sprint import SprintAssigner
 
-ROLLUP_LABEL = "gozu-backlog-rollup"
-_ROLLUP_DESCRIPTION_MAX_LINES = 50
-
 # find_existing_many() batches the dedup search into "labels in (...)"
 # queries instead of one request per finding. Each label matches at most
 # one issue (finding_identity() is 1:1 with a ticket), so a chunk's total
@@ -437,65 +434,3 @@ class JiraClient(TicketClient):
             self._raise_for_status(response, "transition issue")
             return True
         return False
-
-    def _update_ticket(self, issue_key: str, summary: str, description: dict) -> None:
-        payload = {"fields": {"summary": summary, "description": description}}
-        response = self.session.put(
-            f"{self.api_base}/rest/api/3/issue/{issue_key}",
-            json=payload,
-            auth=self.auth,
-            headers=self.headers,
-        )
-        self._raise_for_status(response, "update issue")
-
-    def _build_rollup_summary(self, count: int) -> str:
-        return f"SonarQube backlog: {count} additional finding(s) not yet ticketed"
-
-    def _build_rollup_description(self, remaining: list[Finding]) -> dict:
-        lines = [
-            f"{_title_prefix(finding)}{finding.key} - {finding.finding_type} - "
-            f"{finding.severity.value} - {finding.title}"
-            for finding in remaining[:_ROLLUP_DESCRIPTION_MAX_LINES]
-        ]
-        if len(remaining) > _ROLLUP_DESCRIPTION_MAX_LINES:
-            lines.append(f"... and {len(remaining) - _ROLLUP_DESCRIPTION_MAX_LINES} more")
-
-        return doc(
-            paragraph(
-                "These findings were detected but not individually ticketed this run "
-                "(per-run backlog cap reached) - they'll get their own ticket automatically "
-                "in a future run as capacity frees up."
-            ),
-            bullet_list(lines),
-        )
-
-    def upsert_rollup_ticket(self, remaining: list[Finding]) -> str | None:
-        """One shared ticket for findings that missed the per-run cap, updated in place rather than recreated."""
-        existing = self._find_by_label(ROLLUP_LABEL)
-        if not remaining and existing is None:
-            return None
-
-        summary = self._build_rollup_summary(len(remaining))
-        description = self._build_rollup_description(remaining)
-
-        if existing is not None:
-            self._update_ticket(existing, summary=summary, description=description)
-            return existing
-
-        payload: dict[str, Any] = {
-            "fields": {
-                "project": {"key": self.project_key},
-                "summary": summary,
-                "issuetype": {"name": "Task"},
-                "labels": ["sonarqube", ROLLUP_LABEL],
-                "description": description,
-            }
-        }
-        response = self.session.post(
-            f"{self.api_base}/rest/api/3/issue",
-            json=payload,
-            auth=self.auth,
-            headers=self.headers,
-        )
-        self._raise_for_status(response, "create rollup issue")
-        return response.json()["key"]

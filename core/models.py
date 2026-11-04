@@ -48,6 +48,4 @@ class CreatedTicket(BaseModel):
 class TicketResult(BaseModel):
     created: list[CreatedTicket] = []
     skipped: list[str] = []
-    deferred: list[str] = []  # new but backlog-capped this run
-    rollup_ticket: str | None = None  # shared ticket for `deferred`
     closed: list[str] = []  # auto-closed this run
