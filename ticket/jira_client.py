@@ -237,6 +237,12 @@ class JiraClient(TicketClient):
         details.append(f"Repository: {_require_repo(finding)}")
         if not component_moved:
             details.append(f"Component: {finding.component}")
+        if finding.package:
+            details.append(f"Package: {finding.package}")
+            if finding.installed_version:
+                details.append(f"Installed version: {finding.installed_version}")
+            if finding.fixed_version:
+                details.append(f"Fixed version: {finding.fixed_version}")
         if finding.line is not None and not line_moved:
             details.append(f"Line: {finding.line}")
         details.append(f"Type: {finding.finding_type}")

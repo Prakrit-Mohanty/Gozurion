@@ -68,6 +68,9 @@ class TrivyClient:
             source_tool="trivy",
             how_to_fix=f"Upgrade {pkg} to {fixed_version}" if fixed_version else None,
             rule_key=vuln_id or None,
+            package=pkg or None,
+            installed_version=vuln.get("InstalledVersion") or None,
+            fixed_version=fixed_version or None,
         )
 
     def _from_secret(self, secret: dict, target: str) -> Finding:

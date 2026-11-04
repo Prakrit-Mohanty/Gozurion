@@ -35,6 +35,9 @@ class Finding(BaseModel):
     default_branch: str | None = None  # this repo's trunk, e.g. "main" - not necessarily `branch`
     how_to_fix: str | None = None  # rule-level guidance, not fix-specific
     rule_key: str | None = None  # e.g. "python:S2068"
+    package: str | None = None  # a package finding only, e.g. "lodash"
+    installed_version: str | None = None
+    fixed_version: str | None = None  # as the scanner gives it, e.g. "1.2.5, 2.0.1"
     llm_explanation: str | None = None  # LLM-generated explanation/fix
     code_snippet: str | None = None
     code_snippet_start_line: int | None = None

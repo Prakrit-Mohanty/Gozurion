@@ -140,6 +140,46 @@
           "Commit: aaaaaaaaaa"
         ]
       }
+    },
+    {
+      "name": "a package finding with the package lines",
+      "finding": {
+        "repo": "acme/app",
+        "component": "package.json",
+        "line": null,
+        "package": "lodash",
+        "installed_version": "4.17.15",
+        "fixed_version": "4.17.21",
+        "title": "CVE-2021-23337: lodash command injection",
+        "rule": "CVE-2021-23337",
+        "type": "vulnerability",
+        "severity": "HIGH",
+        "source": "trivy",
+        "branch": "main",
+        "commit": "fedcba9876"
+      },
+      "expected": {
+        "title": "| app | main | package.json | CVE-2021-23337: lodash command injection",
+        "priority": "High",
+        "labels": [
+          "issue-263de6cb6d359aad71ca",
+          "trivy",
+          "branch-main"
+        ],
+        "details": [
+          "Repository: acme/app",
+          "Component: package.json",
+          "Package: lodash",
+          "Installed version: 4.17.15",
+          "Fixed version: 4.17.21",
+          "Type: vulnerability",
+          "Rule: CVE-2021-23337",
+          "Severity: HIGH",
+          "Source: trivy",
+          "Branch: main",
+          "Commit: fedcba9876"
+        ]
+      }
     }
   ]
 }

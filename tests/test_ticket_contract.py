@@ -9,6 +9,7 @@ import pytest
 from core.errors import MissingRepositoryError
 from core.models import Finding, Severity
 from scanner import export, git_context
+from scanner.trivy_scanner import TrivyClient
 from ticket import jira_client
 
 GOLDEN = json.loads((Path(__file__).parent / "contract" / "golden_tickets.json").read_text())
@@ -30,6 +31,9 @@ def make_finding(spec: dict, **changes) -> Finding:
         commit_sha=spec["commit"],
         repo_full_name=spec["repo"],
         rule_key=spec["rule"],
+        package=spec.get("package"),
+        installed_version=spec.get("installed_version"),
+        fixed_version=spec.get("fixed_version"),
     )
     values.update(changes)
     return Finding(**values)
@@ -119,3 +123,71 @@ def test_the_exporter_stops_when_it_cannot_tell_the_repository(monkeypatch):
 
     with pytest.raises(MissingRepositoryError):
         export.gather_git_metadata()
+
+
+PACKAGE = CASES["a package finding with the package lines"]["finding"]
+
+
+def test_a_trivy_finding_with_no_fixed_version_has_no_fixed_version_line(client):
+    finding = make_finding(PACKAGE, fixed_version=None)
+
+    details = details_of(client._build_description(finding))
+
+    assert "Package: lodash" in details
+    assert "Installed version: 4.17.15" in details
+    assert not any(line.startswith("Fixed version") for line in details)
+    assert not any(line.startswith("Line") for line in details)
+
+
+def test_a_finding_with_no_package_has_no_package_lines(client):
+    spec = CASES["a finding with a line"]["finding"]
+
+    details = details_of(client._build_description(make_finding(spec)))
+
+    assert not any(line.startswith(("Package", "Installed", "Fixed")) for line in details)
+
+
+def test_the_ticket_never_carries_the_breaking_change_label(client):
+    assert "breaking-change" not in client._build_labels(make_finding(PACKAGE))
+
+
+def trivy_vulnerability(**changes) -> dict:
+    vuln = {
+        "VulnerabilityID": "CVE-2021-23337",
+        "PkgName": "lodash",
+        "InstalledVersion": "4.17.15",
+        "FixedVersion": "1.2.5, 2.0.1",
+        "Title": "lodash: command injection",
+        "Severity": "HIGH",
+    }
+    return vuln | changes
+
+
+def test_trivy_keeps_the_package_and_both_versions_as_trivy_gives_them():
+    finding = TrivyClient()._from_vuln(trivy_vulnerability(), "package.json")
+
+    assert (finding.package, finding.installed_version, finding.fixed_version) == (
+        "lodash",
+        "4.17.15",
+        "1.2.5, 2.0.1",
+    )
+    assert finding.line is None
+
+
+def test_trivy_gives_no_fixed_version_when_the_vulnerability_has_none():
+    vuln = trivy_vulnerability()
+    del vuln["FixedVersion"]
+
+    finding = TrivyClient()._from_vuln(vuln, "package.json")
+
+    assert finding.fixed_version is None
+    assert finding.package == "lodash"
+
+
+def test_trivy_secret_and_misconfig_findings_have_no_package():
+    client = TrivyClient()
+
+    secret = client._from_secret({"RuleID": "aws", "StartLine": 3}, "a.env")
+    misconfig = client._from_misconfig({"ID": "DS001", "Title": "t"}, "Dockerfile")
+
+    assert [secret.package, misconfig.package] == [None, None]

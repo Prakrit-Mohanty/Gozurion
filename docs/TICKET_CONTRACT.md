@@ -49,6 +49,8 @@ Commit: 0123456789
 
 A package finding also has `Package`, `Installed version` and `Fixed version` after `Component`. The section "Recommended action" follows when the scanner gives one.
 
+Gozurion writes these lines for a Trivy vulnerability. `Fixed version` is the text that Trivy gives, for example `1.2.5, 2.0.1`. A finding with no fixed version has no `Fixed version` line. A package finding has no `Line`.
+
 ### Other fields
 
 The issue type is Bug. The priority comes from the severity: CRITICAL is Highest, HIGH is High, MEDIUM is Medium, and LOW and INFO are Low.
