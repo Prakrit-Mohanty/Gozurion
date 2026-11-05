@@ -1,6 +1,6 @@
 [project]
 name = "sonar_to_jira_agent"
-version = "0.0.2"
+version = "1.1.0"
 description = "Aetherion SDK project for building AI agents and workflows"
 authors = [{ name = "Calfus Inc.", email = "support@calfus.com" }]
 readme = "README.md"
