@@ -213,16 +213,16 @@ class JiraClient(TicketClient):
 
     def _build_summary(self, finding: Finding) -> str:
         """The title follows the Gozu ticket contract: "| repo | branch | file | line | title" (ticket/contract.py)."""
-        return ticket_title(
-            _require_repo(finding), _require_branch(finding), finding.component, finding.line, finding.title
-        )
+        return ticket_title(_require_repo(finding), finding.component, finding.line, finding.title)
 
     def _build_labels(self, finding: Finding) -> list[str]:
-        """issue-{identity} is the actual dedupe mechanism; branch-{branch} is informational only."""
+        """issue-{identity} is the actual dedupe mechanism. branch-{branch} and repo-{repo} say which
+        scan made the ticket, because many services share one Jira project."""
         return [
             f"issue-{finding_identity(finding)}",
             _normalize_label_value(finding.source_tool),
             f"branch-{_normalize_label_value(_require_branch(finding))}",
+            f"repo-{_normalize_label_value(_require_repo(finding))}",
         ]
 
     def _build_description(

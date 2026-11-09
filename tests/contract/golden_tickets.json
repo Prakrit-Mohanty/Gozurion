@@ -17,12 +17,13 @@
         "commit": "abc1234567"
       },
       "expected": {
-        "title": "| app | feature/login | app.py | 5 | Use of eval()",
+        "title": "app | app.py | 5 | Use of eval()",
         "priority": "Medium",
         "labels": [
           "issue-b741a67454933b0e85d8",
           "semgrep",
-          "branch-feature/login"
+          "branch-feature/login",
+          "repo-acme/app"
         ],
         "details": [
           "Repository: acme/app",
@@ -52,12 +53,13 @@
         "commit": "def4567890"
       },
       "expected": {
-        "title": "| app | main | requirements.txt | CVE-2018-1000656: flask denial of service",
+        "title": "app | requirements.txt | CVE-2018-1000656: flask denial of service",
         "priority": "High",
         "labels": [
           "issue-5b98b432ffdec5e4b74f",
           "trivy",
-          "branch-main"
+          "branch-main",
+          "repo-acme/app"
         ],
         "details": [
           "Repository: acme/app",
@@ -86,12 +88,13 @@
         "commit": "0123456789"
       },
       "expected": {
-        "title": "| app | main | LegendItemWithTooltip.tsx | 120 | React dangerouslySetInnerHTML with a value that is not a constant",
+        "title": "app | LegendItemWithTooltip.tsx | 120 | React dangerouslySetInnerHTML with a value that is not a constant",
         "priority": "Medium",
         "labels": [
           "issue-be194dbd982461ad37ca",
           "semgrep",
-          "branch-main"
+          "branch-main",
+          "repo-acme/app"
         ],
         "details": [
           "Repository: acme/app",
@@ -121,12 +124,13 @@
         "commit": "aaaaaaaaaa"
       },
       "expected": {
-        "title": "| app | main | app.py | 7 | Detected a string concatenation with a non-literal variable in a util.format function so...",
+        "title": "app | app.py | 7 | Detected a string concatenation with a non-literal variable in a util.format function so an attack...",
         "priority": "Low",
         "labels": [
           "issue-a83936563fb6301ab9d9",
           "semgrep",
-          "branch-main"
+          "branch-main",
+          "repo-acme/app"
         ],
         "details": [
           "Repository: acme/app",
@@ -159,12 +163,13 @@
         "commit": "fedcba9876"
       },
       "expected": {
-        "title": "| app | main | package.json | CVE-2021-23337: lodash command injection",
+        "title": "app | package.json | CVE-2021-23337: lodash command injection",
         "priority": "High",
         "labels": [
           "issue-263de6cb6d359aad71ca",
           "trivy",
-          "branch-main"
+          "branch-main",
+          "repo-acme/app"
         ],
         "details": [
           "Repository: acme/app",

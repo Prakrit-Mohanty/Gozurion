@@ -11,10 +11,10 @@ A ticket needs a repository and a branch. A tool that cannot find them stops bef
 ### Title
 
 ```
-| repo | branch | file.py | 42 | Rule title
+repo | file.py | 42 | Rule title
 ```
 
-- The repo is the name without the owner. The branch is the whole branch name. The file is the last part of the path. The Details list has the full repository and path.
+- The repo is the name without the owner. The file is the last part of the path. The Details list has the full repository, path and branch.
 - The title is at most 120 characters.
 - A finding with no line has no line part (for example a package finding in `requirements.txt`).
 - If the title is too long, the rule title is cut and ends with `...`.
@@ -26,6 +26,7 @@ A ticket needs a repository and a branch. A tool that cannot find them stops bef
 | `issue-<id>` | The identity of the finding: the first 20 characters of the SHA-1 of `repo`, `file`, `line`, `rule` and `type` joined by `\|`. The same finding gives the same label from every tool and on every branch. |
 | `<tool>` | The scanner: `semgrep`, `trivy` or `sonarqube`. |
 | `branch-<branch>` | The branch that the scan ran on. |
+| `repo-<owner>-<name>` | The repo that the scan ran on, in lower case. Many services can share one Jira project, and two of them can have a branch of the same name. A scan changes the status of the tickets of its own repo and branch only. The Gozu action writes it. Tickets of an earlier version have none. |
 
 veil adds `veil-failed-fix` to a ticket that it cannot fix. A person or a Jira rule adds `veil-eligible`, if the setting `eligible_label` asks for it.
 
