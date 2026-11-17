@@ -11,9 +11,13 @@ itself; run this after changing it so the schema can't drift.
 """
 
 import json
+import sys
 from pathlib import Path
 
-from core.models import Finding
+# core/ lives under src/, which the Aetherion CLI treats as the import root.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from core.models import Finding  # noqa: E402
 
 OUTPUT_PATH = Path(__file__).resolve().parent.parent / "docs" / "report-schema.json"
 

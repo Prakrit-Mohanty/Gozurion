@@ -1,6 +1,6 @@
 [project]
 name = "sonar_to_jira_agent"
-version = "1.1.0"
+version = "1.1.1"
 description = "Aetherion SDK project for building AI agents and workflows"
 authors = [{ name = "Calfus Inc.", email = "support@calfus.com" }]
 readme = "README.md"
@@ -19,19 +19,13 @@ dependencies = [
     "pydantic",
 ]
 
-# Only the Temporal agent/tools (src/agent, src/tools, ticket/) need
+# Only the Aetherion agent/tools (src/agent, src/tools, src/ticket) need
 # these - install with `pip install .[agent]`. Kept separate so a CI
-# runner exporting reports never has to resolve aetherion-sdk's
-# macOS-only wheel.
+# runner exporting reports never has to resolve aetherion-sdk.
 [project.optional-dependencies]
 agent = [
-    # Marker matches the wheel's own tag (cp312-macosx-arm64) - without it,
-    # uv's universal resolution also tries to solve this extra for every
-    # other python_version/sys_platform this project's requires-python
-    # allows (e.g. 3.13, win32) and fails outright since no such wheel
-    # exists for them, even though nothing would ever actually install
-    # this extra there.
-    "aetherion-sdk @ https://sdk.sbox.aetherion.io/Darwin/aetherion_sdk-0.0.92-cp312-cp312-macosx_26_0_arm64.whl ; python_version == '3.12' and sys_platform == 'darwin' and platform_machine == 'arm64'",
+    # Pinned to the version that publish reports ("Pinning aetherion_sdk==...").
+    "aetherion-sdk==0.0.118",
     "temporalio",
     # ticket/screenshot.py - renders the PNG attached to each ticket
     # (code snippet or, for line-less findings, an info card).
@@ -60,7 +54,9 @@ allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 # core/ and ticket/ are vendored from SonarToJira (gozu) - see core/__init__.py.
-packages = ["src", "core", "ticket", "scanner", "storage"]
+# The Aetherion CLI loads each folder of src/ as a top-level package, so the wheel
+# ships them the same way (`from core...`, never `from src.core...`).
+packages = ["src/agent", "src/tools", "src/utils", "src/core", "src/ticket", "src/scanner", "src/storage"]
 
 [tool.black]
 line-length = 100
@@ -77,3 +73,8 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
+
+[tool.pytest.ini_options]
+# The Aetherion CLI loads src/ as the import root, so tests do the same.
+pythonpath = ["src"]
+testpaths = ["tests"]

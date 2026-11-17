@@ -1,7 +1,7 @@
 """S3 -> Temporal trigger for the sonar_to_jira agent.
 
 Subscribed to s3:ObjectCreated:* on the reports bucket, filtered to keys
-ending in "latest/meta.json". scanner/export.py's upload_reports() writes
+ending in "latest/meta.json". src/scanner/export.py's upload_reports() writes
 that object last, so by the time this fires the repo/branch's
 latest/meta.json holds the findings list.
 
@@ -70,7 +70,7 @@ _META_SUFFIX = "/latest/meta.json"
 
 
 def _repo_and_branch(meta, key: str) -> tuple[str, str] | None:
-    """repo_full_name/branch for one meta.json. scanner/export.py writes an object, but a list
+    """repo_full_name/branch for one meta.json. src/scanner/export.py writes an object, but a list
     (e.g. of stamped findings) is accepted too - the first entry carrying repo_full_name wins.
     Falls back to the key itself: {owner}/{repo}/{branch}/latest/meta.json, where everything
     after the first two segments is the branch, slashes included."""

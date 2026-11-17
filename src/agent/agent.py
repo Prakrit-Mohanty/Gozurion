@@ -7,7 +7,7 @@ from typing import Any, Dict
 from aetherion_sdk import agent, toolExecutor
 
 
-@agent()
+@agent(name="sonar_to_jira")
 async def sonar_to_jira(payload: Dict[str, Any] | None = None) -> dict:
     """Org-wide agent, two ways to run it:
     - Empty payload (schedule / manual): lists every repo/branch in S3 with a

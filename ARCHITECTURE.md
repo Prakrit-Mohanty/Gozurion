@@ -21,23 +21,23 @@ Any org repo's CI (calls the reusable workflow below)
                         Jira
 ```
 
-The exporter (`scanner/`) and the Temporal agent (`src/agent/`, `src/tools/`) both
+The exporter (`src/scanner/`) and the Temporal agent (`src/agent/`, `src/tools/`) both
 live in this repo. `.github/workflows/export-sonar-report.yml` is a reusable workflow
 any repo in the org calls (`action.yml` is the same thing as a composite action). CI
 only uploads the report. A Lambda subscribed to the bucket starts the agent for that
 repo/branch when the upload finishes. See "Triggering it" below.
 
-## The exporter — `scanner/`
+## The exporter — `src/scanner/`
 
 Runs in CI, outside Temporal entirely, on a plain `ubuntu-latest` runner:
 
-1. `scanner/sonarqube.py`'s `SonarQubeClient.fetch_findings()` queries a self-hosted
+1. `src/scanner/sonarqube.py`'s `SonarQubeClient.fetch_findings()` queries a self-hosted
    SonarQube's `/api/issues/search` and normalizes each result into a `Finding`.
-2. `scanner/git_context.py` stamps `commit_sha`/`branch`/`repo_full_name` (from
+2. `src/scanner/git_context.py` stamps `commit_sha`/`branch`/`repo_full_name` (from
    GitHub Actions' own env vars, falling back to `git`) and `default_branch` (via
    GitHub's API — optionally authenticated with `GITHUB_TOKEN` for private repos).
-3. `scanner/export.py` stamps that metadata onto every finding and uploads the report
-   via `storage/factory.py`'s `get_storage_client()`.
+3. `src/scanner/export.py` stamps that metadata onto every finding and uploads the report
+   via `src/storage/factory.py`'s `get_storage_client()`.
 
 **Deliberately kept dependency-light**: this whole chain only imports `boto3`/
 `requests`/`pydantic` — no `aetherion-sdk`, no `temporalio`. `pyproject.toml` splits
@@ -51,11 +51,11 @@ respectively - see below); `default_branch` is stamped but not currently read by
 anything, kept for possible future use (e.g. only ticketing findings on the default
 branch).
 
-## Report storage — `storage/`
+## Report storage — `src/storage/`
 
-`fetch_report_from_s3` (despite the name) and `scanner/export.py` never touch `boto3`
+`fetch_report_from_s3` (despite the name) and `src/scanner/export.py` never touch `boto3`
 directly — both go through `storage.base.ReportStorage` (`upload`/`download`), built
-by `storage/factory.py`. `storage/s3_storage.py` is the only implementation today, and it always talks to real
+by `src/storage/factory.py`. `src/storage/s3_storage.py` is the only implementation today, and it always talks to real
 AWS S3.
 
 ## The Agent — `src/agent/agent.py`
@@ -101,12 +101,12 @@ worker that's `TENANT_ID`, which the platform sets and which is the tenant's buc
 name itself; `S3_BUCKET` is the fallback for local runs (`_bucket()` in
 `src/tools/tools.py`). The Jira
 destination (`JIRA_URL`/`JIRA_EMAIL`/`JIRA_API_TOKEN`/`JIRA_PROJECT_KEY`) is also one
-fixed value for the whole org, read from `.env` via `ticket/factory.py`'s
+fixed value for the whole org, read from `.env` via `src/ticket/factory.py`'s
 `build_ticket_client()` — not per-run input, so every repo this agent discovers
 files into the same Jira instance/project.
 
 `JIRA_URL` is the plain site URL (`https://x.atlassian.net`) - `JiraClient.__init__`
-(`ticket/jira_client.py`) resolves it to `https://api.atlassian.com/ex/jira/{cloudId}`
+(`src/ticket/jira_client.py`) resolves it to `https://api.atlassian.com/ex/jira/{cloudId}`
 via the public, unauthenticated `{jira_url}/_edge/tenant_info` and routes every REST
 call through that gateway instead. Required for Atlassian's newer API tokens with
 scopes to work at all - Basic Auth against the plain site URL only works with a
@@ -117,7 +117,7 @@ types, so this isn't conditional on which kind is configured.
 ## Dedup — a live Jira label search, no database
 
 `create_jira_tickets` is stateless: no Postgres, no ledger, nothing but Jira itself.
-`ticket_client.find_existing(finding)` (`ticket/jira_client.py`) searches Jira for a
+`ticket_client.find_existing(finding)` (`src/ticket/jira_client.py`) searches Jira for a
 ticket already labeled `issue-{finding_identity(finding)}`; if none exists,
 `create_ticket(finding)` creates one with that same label stamped on it.
 
@@ -131,7 +131,7 @@ doesn't implement it. `JiraClient` also keeps one `requests.Session` (shared wit
 add, remote link, screenshot upload - so a run reuses one pooled connection to
 Jira instead of a fresh TCP/TLS handshake per request.
 
-`finding_identity()` (`ticket/base.py`) hashes `repo_full_name + component + line +
+`finding_identity()` (`src/ticket/base.py`) hashes `repo_full_name + component + line +
 rule_key + finding_type` — deliberately excludes `finding.key`/`finding.branch`, so
 the same bug reported from two different branches (SonarQube scopes its own `key`
 per branch) resolves to the same identity and the same Jira label, avoiding
@@ -152,7 +152,7 @@ consistent with that same decision. `TICKET_BACKEND`/`JIRA_URL`/`JIRA_EMAIL`/
 `JIRA_API_TOKEN`/`JIRA_PROJECT_KEY` all come from `.env` - one fixed Jira
 destination for every repo this agent discovers.
 
-## Screenshots — `ticket/screenshot.py`
+## Screenshots — `src/ticket/screenshot.py`
 
 Every newly created ticket gets a PNG attached via `JiraClient.attach_screenshot()`
 (a bonus capability - `create_jira_tickets` detects it with `getattr`, same pattern

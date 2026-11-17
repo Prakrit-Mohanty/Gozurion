@@ -1,6 +1,6 @@
 # S3 report contract
 
-`scanner/export.py` uploads one file per repo/branch, overwritten every run (no
+`src/scanner/export.py` uploads one file per repo/branch, overwritten every run (no
 per-commit copies, no per-scanner files):
 
     {bucket}/{repo_full_name}/{branch}/latest/meta.json
@@ -28,24 +28,24 @@ Jira searches, never a duplicate ticket.
 
 `fetch_report_from_s3(repo_full_name, branch="main")` downloads the
 `latest/meta.json` JSON array of `Finding` objects (see
-`report-schema.json`, generated from `core/models.py` via
+`report-schema.json`, generated from `src/core/models.py` via
 `scripts/generate_report_schema.py` - regenerate after changing `Finding`).
 Deployed org-wide across many repos each exporting on its own schedule,
 the agent is only ever told which repo/branch to check - never a
 commit-specific key - so it always gets that repo's most recent combined
-snapshot regardless of which run produced it. `scanner/export.py::latest_prefix()`
+snapshot regardless of which run produced it. `src/scanner/export.py::latest_prefix()`
 is the single source of truth for that fixed path; keep the exporter and
 `src/tools/tools.py` in sync with it, not with a copy of the format string.
 
 One report = one scan of one branch at one commit. `create_jira_tickets`
 dedupes findings against Jira via a label search on `finding_identity()`
-(`ticket/base.py` - a hash of `repo_full_name`+`component`+`line`+`rule_key`+
+(`src/ticket/base.py` - a hash of `repo_full_name`+`component`+`line`+`rule_key`+
 `finding_type`, deliberately branch/key-independent, but repo-specific -
 `JIRA_PROJECT_KEY` is one fixed value for every repo this agent processes,
 not routed per repo, so the hash has to disambiguate repos itself) - no
 other ordering or completeness requirement on the report itself.
 
-`commit_sha` and `repo_full_name` are stamped by `scanner/git_context.py` and read
+`commit_sha` and `repo_full_name` are stamped by `src/scanner/git_context.py` and read
 by the agent (discovery and dedup, respectively - see above). `default_branch` is
 stamped but not currently read by anything - kept in the schema for possible future
 use (e.g. only ticketing findings on the default branch), not because anything

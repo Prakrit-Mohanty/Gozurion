@@ -48,8 +48,8 @@ The action only uploads. A Lambda on that bucket starts the Jira agent when the 
 
 ## Internal / agent development
 
-The rest of this repo also contains the Temporal-based Jira ticketing agent (`src/`, `ticket/`,
-`core/`) built with Calfus's internal `aetherion` SDK. That part isn't used by the Action above and
+The rest of this repo also contains the Temporal-based Jira ticketing agent (`src/`, `src/ticket/`,
+`src/core/`) built with Calfus's internal `aetherion` SDK. That part isn't used by the Action above and
 isn't published to Marketplace; it's documented here for contributors working on the agent itself.
 
 ### Creating a New Project
